@@ -49,6 +49,9 @@ const unsigned long INTENT_MIN_MS = 550;   // must be moving this long for inten
 const unsigned long GAP_TOL_MS    = 120;   
 const unsigned long REFRACTORY_MS = 800;   
 
+static float ax=0, ay=0, az=0;
+static float amag=0;
+
 enum MotionState { STILL, MOVING };
 MotionState state = STILL;
 int enter_ctr = 0, exit_ctr = 0;
@@ -158,15 +161,16 @@ void accel_loop() {
     bout_start_ms = 0;
   }
 
-  Serial.print(now);                 Serial.print(",");
-  Serial.print(ax, 3);               Serial.print(",");
-  Serial.print(ay, 3);               Serial.print(",");
-  Serial.print(az, 3);               Serial.print(",");
-  Serial.print(a_lin_raw, 3);        Serial.print(",");
-  Serial.print(a_lin_smooth, 3);     Serial.print(",");
-  Serial.print(state == MOVING ? "MOVING" : "STILL");  Serial.print(",");
-  Serial.println(intent ? "INTENT" : "NOINTENT");
+  // Serial.print(now);                 Serial.print(",");
+  // Serial.print(ax, 3);               Serial.print(",");
+  // Serial.print(ay, 3);               Serial.print(",");
+  // Serial.print(az, 3);               Serial.print(",");
+  // Serial.print(a_lin_raw, 3);        Serial.print(",");
+  // Serial.print(a_lin_smooth, 3);     Serial.print(",");
+  // Serial.print(state == MOVING ? "MOVING" : "STILL");  Serial.print(",");
+  // Serial.println(intent ? "INTENT" : "NOINTENT");
 
   delay(20); 
   }
+  float accel_getAmag() { return amag; }
 } 

@@ -1,4 +1,3 @@
-// ForceSensorsInternal.cpp
 #include <Arduino.h>
 #include <Wire.h>
 
@@ -10,10 +9,19 @@ namespace ForceInternal {
   using ::millis;
   using ::delay;
 
+  // Values for main
+  static float last_sumN = 0.0f;
+  static float last_W_kg = 0.0f;
+
+  float force_getSumN();
+  float force_getWeightKg();
+
+
   // Values from excel
   static float A_N     = 9.8f;
   static float B_per_S = 102460.0f;
 
+  // pin map
   static const int PIN_I = A1;   
   static const int PIN_M = A17;  
   static const int PIN_R = A16;  
@@ -27,7 +35,7 @@ namespace ForceInternal {
   static int mapIdx[4] = { 0, 1, 3, 2 };
 
   static const float VCC          = 3.3f;
-  static const float RFIXED       = 150000.0f;   // 150 kΩ divider resistor
+  static const float RFIXED       = 150000.0f;   // 150 kΩ 
   static const int   ADC_BITS     = 12;
   static const int   ADC_AVG      = 8;
   static const int   SAMPLE_AVG_N = 64;          // per reading average
@@ -39,7 +47,8 @@ namespace ForceInternal {
   static bool  hasTare[4]= {false,false,false,false};
 
   static float alpha0            = 0.0f;
-  static float handScaleK_base   = 2.20f;    // ~55% palm share)
+  static float handScaleK_base   = 2.20f;    // 55% palm
+  // static float handScaleK_base = 2.86f; //35% fingers, may want to try this value 
   static float handScaleK_lift   = 2.20f;    // locked for current lift
   static const float K_LOCK_MIN  = 0.85f;   
   static const float K_LOCK_MAX  = 1.15f;    
@@ -214,16 +223,22 @@ namespace ForceInternal {
     float W_lb = W_kg * 2.20462262f;
 
     // Print line
-    Serial.print("finger_forces: ");
-    Serial.print(F_I,2); Serial.print(",");
-    Serial.print(F_M,2); Serial.print(",");
-    Serial.print(F_R,2); Serial.print(",");
-    Serial.print(F_P,2);
-    Serial.print(" | ");
-    Serial.print(W_kg,2); Serial.print(",");
-    Serial.println(W_lb,2);
+    // Serial.print("finger_forces: ");
+    // Serial.print(F_I,2); Serial.print(",");
+    // Serial.print(F_M,2); Serial.print(",");
+    // Serial.print(F_R,2); Serial.print(",");
+    // Serial.print(F_P,2);
+    // Serial.print(" | ");
+    // Serial.print(W_kg,2); Serial.print(",");
+    // Serial.println(W_lb,2);
 
     lastUpdateMs = millis();
+    last_sumN = sumN;
+    last_W_kg = W_kg;
     delay(150);
+    
   }
+
+  float force_getSumN() { return last_sumN; }
+  float force_getWeightKg() { return last_W_kg; }
 } 

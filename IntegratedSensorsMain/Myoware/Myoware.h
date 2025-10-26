@@ -6,5 +6,8 @@ namespace Myo {
   public:
     void setup();
     void runTestStep();
+    bool  isActive() const;      
+    bool  isLiftActive() const;  
+    float getEmgSmooth() const;
   };
 } 

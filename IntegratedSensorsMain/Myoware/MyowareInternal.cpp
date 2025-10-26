@@ -8,6 +8,10 @@ namespace MyoInternal {
   using ::micros;
   using ::millis;
   using ::delay;
+
+  bool  myo_is_active();
+  bool  myo_is_lift();
+  float myo_get_smooth();
   
 const int MYO_PIN = A0;      // pin 14
 const int LED_PIN = 13;      
@@ -329,18 +333,21 @@ void myo_loop() {
       }
 
       // LED on when active
-      digitalWrite(LED_PIN, active ? HIGH : LOW);
+      // digitalWrite(LED_PIN, active ? HIGH : LOW);
 
-      Serial.print(smooth,1); Serial.print('\t');
-      Serial.print(thr_on,1); Serial.print('\t');
-      Serial.print(thr_lift_emg,1); Serial.print('\t');
-      Serial.print(active ? 1 : 0); Serial.print('\t');
-      Serial.println(emg_lift ? 1 : 0);
+      // Serial.print(smooth,1); Serial.print('\t');
+      // Serial.print(thr_on,1); Serial.print('\t');
+      // Serial.print(thr_lift_emg,1); Serial.print('\t');
+      // Serial.print(active ? 1 : 0); Serial.print('\t');
+      // Serial.println(emg_lift ? 1 : 0);
     } 
     
     break;
   }
 }
 
-
+  // Set values so we can access them from main
+  bool  myo_is_active() { return active; }
+  bool  myo_is_lift()   { return emg_lift; }
+  float myo_get_smooth(){ return smooth; }
 } 
