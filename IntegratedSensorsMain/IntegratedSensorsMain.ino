@@ -13,6 +13,8 @@
 #include "ForceSensors/ForceSensorsInternal.cpp"
 #include "MotorAssist/MotorAssist.cpp"
 #include "MotorAssist/MotorAssistInternal.cpp"
+#include "Control/controller.cpp"
+#include "Control/controller.h"
 
 namespace ForceInternal {
   void  force_setLiftActive(bool active);
@@ -37,6 +39,7 @@ Accel::Module       accel;
 Myo::Module         myo;
 Force::Module       force;
 MotorTorque::Module motor;
+Controller controller;
 
 // timing periods
 static const uint32_t MYO_PERIOD_MS   = 10;   // 100 Hz
@@ -229,6 +232,7 @@ void loop() {
       const bool quietish    = (votesNow <= 1);
       const bool forceVeryLow = (sumN_ema < 1.5f);
       const bool emgInactive  = !v_emg;
+      Serial.printf("[FSM] Made it here, beginning of LIFT\n");
 
       if (forceVeryLow && emgInactive) {
         state = State::HOLD;
@@ -333,23 +337,42 @@ void loop() {
   lastAssistTickUs = nowUs;
 
   if (assistEnabled) {
+    Serial.printf("[FSM] Made it here, beginning of assistance\n");
+
     const float weightKg      = ForceInternal::force_getWeightKg();
     const float weightLb      = ForceInternal::force_getWeightLb();
     const float elbowAngleRad = getElbowAngleRadFallback();
+    const float elbowTorque =   MotorInternal::motor_getElbowTorqueNm(); 
     const float assistFrac    = DEFAULT_ASSIST_FRACTION;
+    const float r_spool = 0.02761;
+    const float l_forearm = 0.25;
+    const float kt = 0.69;
+
+    MotorInternal::motor_setWeightKg(weightKg);
+    MotorInternal::motor_setElbowAngleRad(elbowAngleRad);
+    MotorInternal::motor_setAssistFraction(assistFrac);
+    motor.runTestStep();
+
+    Serial.printf("[FSM] Made it here, sending value\n");
+
+    controller.torqueToCurrent(elbowTorque, r_spool, l_forearm,  kt);
+
+  } else {
+    // assist off in NO_LIFT and PRELIFT
+        const float weightKg      = ForceInternal::force_getWeightKg();
+    const float weightLb      = ForceInternal::force_getWeightLb();
+    const float elbowAngleRad = getElbowAngleRadFallback();
+    const float elbowTorque =   MotorInternal::motor_getElbowTorqueNm(); 
+    const float assistFrac    = DEFAULT_ASSIST_FRACTION;
+    const float r_spool = 0.02761;
+    const float l_forearm = 0.25;
+    const float kt = 0.69;
 
     MotorInternal::motor_setWeightKg(weightKg);
     MotorInternal::motor_setElbowAngleRad(elbowAngleRad);
     MotorInternal::motor_setAssistFraction(assistFrac);
 
     motor.runTestStep();
-
-    // Debug
-    Serial.printf("[ASSIST] %s  W=%.2f lb\n",
-                  (state == State::LIFT ? "LIFT" : "HOLD"),
-                  weightLb);
-  } else {
-    // assist off in NO_LIFT and PRELIFT
-    // driverWritePWM(0);
+    controller.torqueToCurrent(0, r_spool, l_forearm,  kt);
   }
 }

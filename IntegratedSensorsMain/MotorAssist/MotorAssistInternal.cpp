@@ -15,7 +15,7 @@ namespace MotorInternal {
   static float rho_elbow_m       = 0.035f;   // effective elbow moment arm (m)
   static float spool_radius_m    = 0.02761f;   // spool radius (m)
   static float mech_efficiency   = 0.80f;
-  static float Kt_out_Nm_per_A   = 0.49f;    // Nm/A (post-gearbox)
+  static float Kt_out_Nm_per_A   = 0.6934f;    // Nm/A 
   static float tau_cont_Nm       = 1.47f;    // continuous torque (Nm)
   static float I_cont_A          = 2.5f;     // A
   static float I_stall_A         = 5.0f;     // A
