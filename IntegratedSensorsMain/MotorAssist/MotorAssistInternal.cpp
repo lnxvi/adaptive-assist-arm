@@ -10,10 +10,10 @@ namespace MotorInternal {
   using ::delay;
 
   static float g_mps2            = 9.80665f;
-  static float r_hand_m          = 0.30f;    // elbow -> hand (m)
+  static float r_hand_m          = 0.25f;    // elbow to hand (m)
   static float assist_ratio_0to1 = 0.60f;    // 0..1
   static float rho_elbow_m       = 0.035f;   // effective elbow moment arm (m)
-  static float spool_radius_m    = 0.020f;   // winch radius (m)
+  static float spool_radius_m    = 0.02761f;   // spool radius (m)
   static float mech_efficiency   = 0.80f;
   static float Kt_out_Nm_per_A   = 0.49f;    // Nm/A (post-gearbox)
   static float tau_cont_Nm       = 1.47f;    // continuous torque (Nm)
@@ -51,14 +51,14 @@ namespace MotorInternal {
     float tau_elbow_cmd = tau_grav * in_assist_frac;
     if (!isfinite(tau_elbow_cmd) || tau_elbow_cmd < 0) tau_elbow_cmd = 0;
 
-    // Elbow torque -> cable force
+    // Elbow torque to cable force
     const float rho = (rho_elbow_m > 0.010f ? rho_elbow_m : 0.010f);
     float F_cable   = tau_elbow_cmd / rho;
 
-    // Cable force -> output torque
+    // Cable force to output torque
     float tau_out = (F_cable * spool_radius_m) / (mech_efficiency > 0.10f ? mech_efficiency : 0.10f);
 
-    // Output torque -> motor current, clamp to limits
+    // Output torque to motor current, clamp to limits
     float I_A = (Kt_out_Nm_per_A > 0.0f) ? (tau_out / Kt_out_Nm_per_A) : 0.0f;
     if (!isfinite(I_A) || I_A < 0) I_A = 0.0f;
     if (I_A > I_stall_A) I_A = I_stall_A;

@@ -241,4 +241,5 @@ namespace ForceInternal {
 
   float force_getSumN() { return last_sumN; }
   float force_getWeightKg() { return last_W_kg; }
+  float force_getWeightLb() { return last_W_kg * 2.20462262f;}
 } 
