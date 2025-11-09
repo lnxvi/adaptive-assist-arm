@@ -2,6 +2,8 @@
 #define CONTROL_H
 
 #include <stdint.h>
+#include "Arduino.h"
+#include <TimerThree.h>
 
 class Controller {
     private:
@@ -14,12 +16,16 @@ class Controller {
         float prev_error;
         float integral;
 
+        float const MAX_CURRENT = 3.0f;
+        uint16_t MAX_PWM = 1023;
+
     public:
         Controller(float Kp = 0.0, float Ki = 0.0, float Kd = 0.0);  // constructor
 
         float torqueToCurrent(float torque, float r_spool, float l_forearm, float Kt);  // torque-current conversion
         float control(float i_meas, uint16_t dt);
         uint16_t currentToPWM(float I);  // current PWM conversion
+        void sendMotorDuty(uint16_t duty);
         void reset();
 
         // mutators, accessors

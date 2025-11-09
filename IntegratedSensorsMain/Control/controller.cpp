@@ -1,5 +1,16 @@
 #include "controller.h"
+
 #include <stdint.h>
+#include "Arduino.h"
+#include <TimerThree.h>
+
+// #define ENC_A 2
+// #define ENC_B 3
+#define nSLEEP 31
+#define PMODE 30
+#define IN2 6
+#define IN1 9
+// #define CS A14  // pin 38
 
 Controller::Controller(float Kp_init, float Ki_init, float Kd_init) 
   : Kp(Kp_init), Ki(Ki_init), Kd(Kd_init), I_setpoint(0.0f), 
@@ -34,9 +45,14 @@ float Controller::control(float i_meas, uint16_t dt) {
 
 // current PWM conversion
 uint16_t Controller::currentToPWM(float I) {
-  uint16_t duty;
-  // TODO
-  return duty = 0;
+  uint16_t duty = (int)(I/MAX_CURRENT)*MAX_PWM;
+  return duty;
+}
+
+void Controller::sendMotorDuty(uint16_t duty) {
+  // todo clamp pwms
+
+  Timer3.pwm(IN1, duty);  // send duty to timer
 }
 
 void Controller::reset() {
