@@ -57,7 +57,7 @@ static const float AMAG_DELTA_OFF = 0.07f;  // exit moving
 // entry guard
 static const float MIN_FORCE_FOR_EMG_MOTION_LIFT = 0.30f; 
 
-// FSM timing (existing)
+// FSM timing
 static const uint32_t ENTER_MS   = 90;  // kept but not used for PRELIFT entry now
 static const uint32_t EXIT_MS    = 80;  // LIFT to HOLD faster
 static const uint32_t RELEASE_MS = 350; // HOLD to NO_LIFT
