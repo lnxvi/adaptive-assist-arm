@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <TimerThree.h>
 #include "Accelerometer/Accelerometer.h"
 #include "Myoware/Myoware.h"
 #include "ForceSensors/ForceSensors.h"
@@ -81,10 +82,10 @@ const float l_forearm = 0.25;
 const float Kt = 0.69;
 
 // Motor Pins
-static const int IN1 = 9;
-static const int IN2 = 6;
-static const int PMODE = 30;
-static const int nSLEEP = 31;
+#define nSLEEP 31
+#define PMODE 30
+#define IN2 6
+#define IN1 9
 
 static inline bool hyst(bool prev, bool onCond, bool offCond) {
   if (!prev && onCond)  return true;
@@ -137,7 +138,12 @@ void setup() {
   pinMode(nSLEEP, OUTPUT);
   pinMode(PMODE, OUTPUT);
   digitalWrite(nSLEEP, HIGH);
-  digitalWrite(PMODE, HIGH);
+  digitalWrite(PMODE, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN1, LOW);
+
+  Timer3.initialize(40);
+  Timer3.pwm(IN1, 0);
 
   myo.setup();
   accel.setup();
@@ -372,8 +378,11 @@ void loop() {
 
     Serial.printf("[FSM] Made it here, sending value\n");
 
+    digitalWrite(PMODE, HIGH);
+
     const float I_set = controller.torqueToCurrent(elbowTorque, r_spool, l_forearm, Kt);
-    controller.setIsetpoint(I_set);
+    const uint16_t duty = controller.currentToPWM(I_set);
+    controller.sendMotorDuty(700);
 
   } else {
     
@@ -388,6 +397,8 @@ void loop() {
     MotorInternal::motor_setAssistFraction(assistFrac);
 
     motor.runTestStep();
-    controller.torqueToCurrent(0, r_spool, l_forearm,  Kt);
+    //const float I_set = controller.torqueToCurrent(0, r_spool, l_forearm, Kt);
+    //const uint16_t duty = controller.currentToPWM(I_set);
+    controller.sendMotorDuty(0);
   }
 }

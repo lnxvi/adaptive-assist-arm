@@ -6,10 +6,22 @@
 
 // #define ENC_A 2
 // #define ENC_B 3
+#ifndef nSLEEP
 #define nSLEEP 31
+#endif
+
+#ifndef PMODE
 #define PMODE 30
+#endif
+
+#ifndef IN2
 #define IN2 6
+#endif
+
+#ifndef IN1
 #define IN1 9
+#endif
+
 // #define CS A14  // pin 38
 
 Controller::Controller(float Kp_init, float Ki_init, float Kd_init) 
@@ -19,6 +31,7 @@ Controller::Controller(float Kp_init, float Ki_init, float Kd_init)
 
 // torque-current conversion
 float Controller::torqueToCurrent(float torque, float r_spool, float l_forearm, float Kt) {
+  Serial.println(F("[Controller] torqueToCurrent called"));
   return (torque*r_spool)/(l_forearm*Kt);
 }
 
