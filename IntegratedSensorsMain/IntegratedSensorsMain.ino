@@ -137,10 +137,10 @@ void setup() {
   pinMode(IN2, OUTPUT);
   pinMode(nSLEEP, OUTPUT);
   pinMode(PMODE, OUTPUT);
-  digitalWrite(nSLEEP, HIGH);
-  digitalWrite(PMODE, LOW);
+  digitalWrite(PMODE, HIGH);
   digitalWrite(IN2, LOW);
   digitalWrite(IN1, LOW);
+  digitalWrite(nSLEEP, HIGH);
 
   Timer3.initialize(40);
   Timer3.pwm(IN1, 0);
@@ -377,8 +377,6 @@ void loop() {
     motor.runTestStep();
 
     Serial.printf("[FSM] Made it here, sending value\n");
-
-    digitalWrite(PMODE, HIGH);
 
     const float I_set = controller.torqueToCurrent(elbowTorque, r_spool, l_forearm, Kt);
     const uint16_t duty = controller.currentToPWM(I_set);
