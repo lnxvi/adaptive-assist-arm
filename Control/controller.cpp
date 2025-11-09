@@ -1,0 +1,58 @@
+#include "controller.h"
+#include <stdint.h>
+
+Controller::Controller(float Kp_init, float Ki_init, float Kd_init) 
+  : Kp(Kp_init), Ki(Ki_init), Kd(Kd_init), I_setpoint(0.0f), 
+  I_cmd(0.0f), error(0.0f), prev_error(0.0f), integral(0.0f) 
+  {}
+
+// torque-current conversion
+float Controller::torqueToCurrent(float torque, float r_spool, float l_forearm, float Kt) {
+  return (torque*r_spool)/(l_forearm*Kt);
+}
+
+// PID loop on current
+// measured current
+// returns regulated current
+float Controller::control(float i_meas, uint16_t dt) {
+  float dt_s = (float)dt/1000.0;
+
+  error = I_setpoint - i_meas;
+  integral += 0.5*(error+prev_error)*dt_s;  // trapezoidal integration method
+  // TODO windup check here
+
+  // float derivative = (error-prev_error)/dt_s;
+
+  // I_cmd = Kp*error;
+  I_cmd = Kp*error + Ki*integral;
+  // I_cmd = Kp*error + Ki*integral + Kd*derivative;
+
+  prev_error = error;
+
+  return I_cmd;
+}
+
+// current PWM conversion
+uint16_t Controller::currentToPWM(float I) {
+  uint16_t duty;
+  // TODO
+  return duty = 0;
+}
+
+void Controller::reset() {
+  error = 0.0;
+  integral = 0.0;
+  prev_error = 0.0;
+  I_cmd = 0.0;
+}
+
+void Controller::setKp(float new_Kp) {Kp = new_Kp;}
+float Controller::getKp() {return Kp;}
+void Controller::setKi(float new_Ki) {Ki = new_Ki;}
+float Controller::getKi() {return Ki;}
+void Controller::setKd(float new_Kd) {Kd = new_Kd;}
+float Controller::getKd() {return Kd;}
+void Controller::setIsetpoint(float new_i_setpoint) {I_setpoint = new_i_setpoint;}
+float Controller::getIsetpoint() {return I_setpoint;}
+void Controller::setIcmd(float new_i_cmd) {I_cmd = new_i_cmd;}  // I_cmd should really only change internally
+float Controller::getIcmd() {return I_cmd;}
