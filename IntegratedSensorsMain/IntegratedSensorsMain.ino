@@ -75,6 +75,17 @@ static const uint32_t PRELIFT_DWELL_MS  = 3000; // 3 seconds
 static uint32_t bootMs = 0;
 static const uint32_t STARTUP_INHIBIT_MS = 3000; // 3 s after power on
 
+// Motor Values
+const float r_spool = 0.02761;
+const float l_forearm = 0.25;
+const float Kt = 0.69;
+
+// Motor Pins
+static const int IN1 = 9;
+static const int IN2 = 6;
+static const int PMODE = 30;
+static const int nSLEEP = 31;
+
 static inline bool hyst(bool prev, bool onCond, bool offCond) {
   if (!prev && onCond)  return true;
   if ( prev && offCond) return false;
@@ -119,6 +130,14 @@ void setup() {
   const uint32_t t0 = millis();
   while (!Serial && (millis() - t0 < 2000)) { /* wait */ }
 #endif
+
+  // Set motor pins to output
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(nSLEEP, OUTPUT);
+  pinMode(PMODE, OUTPUT);
+  digitalWrite(nSLEEP, HIGH);
+  digitalWrite(PMODE, HIGH);
 
   myo.setup();
   accel.setup();
@@ -343,12 +362,8 @@ void loop() {
     const float weightKg      = ForceInternal::force_getWeightKg();
     const float weightLb      = ForceInternal::force_getWeightLb();
     const float elbowAngleRad = getElbowAngleRadFallback();
-    //const float elbowTorque =   MotorInternal::motor_getElbowTorqueNm();
-    const float elbowTorque = MotorInternal::motor_getOutputTorqueNm(); 
+    const float elbowTorque =   MotorInternal::motor_getElbowTorqueNm();
     const float assistFrac    = DEFAULT_ASSIST_FRACTION;
-    const float r_spool = 0.02761;
-    const float l_forearm = 0.25;
-    const float Kt = 0.69;
 
     MotorInternal::motor_setWeightKg(weightKg);
     MotorInternal::motor_setElbowAngleRad(elbowAngleRad);
@@ -367,15 +382,12 @@ void loop() {
     const float elbowAngleRad = getElbowAngleRadFallback();
     const float elbowTorque = MotorInternal::motor_getElbowTorqueNm();
     const float assistFrac    = DEFAULT_ASSIST_FRACTION;
-    const float r_spool = 0.02761;
-    const float l_forearm = 0.25;
-    const float kt = 0.69;
 
     MotorInternal::motor_setWeightKg(weightKg);
     MotorInternal::motor_setElbowAngleRad(elbowAngleRad);
     MotorInternal::motor_setAssistFraction(assistFrac);
 
     motor.runTestStep();
-    controller.torqueToCurrent(0, r_spool, l_forearm,  kt);
+    controller.torqueToCurrent(0, r_spool, l_forearm,  Kt);
   }
 }
