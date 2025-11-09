@@ -12,7 +12,7 @@ namespace MyoInternal {
   bool  myo_is_active();
   bool  myo_is_lift();
   float myo_get_smooth();
-  
+
 const int MYO_PIN = A0;      // pin 14
 const int LED_PIN = 13;      
 
@@ -21,39 +21,44 @@ const unsigned long SAMPLE_PERIOD_MS = 10; // 100 Hz
 const float DT_SEC = SAMPLE_PERIOD_MS / 1000.0f;
 
 // Smoothing 
-const float TAU_SEC = 0.10f;             // ~100 ms smoothing
+const float TAU_SEC = 0.10f;             // 100 ms smoothing
 const float ALPHA   = TAU_SEC / (TAU_SEC + DT_SEC);
 
-// Debounce & hold times
-const int ENTER_SAMPLES = 5;             // 50 ms
-const int EXIT_SAMPLES  = 12;            // 120 ms
-const unsigned long LIFT_HOLD_MS = 250;  // need this long above thr_lift_emg
+// Debounce and hold times
+const int ENTER_SAMPLES = 3;             // 30 ms
+const int EXIT_SAMPLES  = 6;             // 60 ms
+const unsigned long LIFT_HOLD_MS = 120;  // need this long above thr_lift_emg
 
 // Threshold model
 const float K_STD        = 4.0f;         
 const int   MARGIN_CNTS  = 60;           
 const float HYST_FACTOR  = 0.6f;         
 
-// Calibration variables
+// Calibration windows
 const unsigned long AIRCURL_MS = 10000;  // 10 s capture
-const int AIRCURL_MAX_SAMPLES  = 1200;   // 12 s 
-const unsigned long MVC_MS = 5000;       // 5 s capture
-const int MVC_MAX_SAMPLES  = 600;
+const int AIRCURL_MAX_SAMPLES  = 1200;   // 12 s buffer
+const unsigned long MVC_MS     = 5000;   // 5 s capture
+const int MVC_MAX_SAMPLES      = 600;
 
+// Online rest stats (Welford)
 unsigned long restN = 0;
 double restMean = 0.0, restM2 = 0.0;
 
+// Capture buffers
 float airBuf[AIRCURL_MAX_SAMPLES];
 int   airN = 0;
 
 float mvcBuf[MVC_MAX_SAMPLES];
 int   mvcN = 0;
-bool  doMVC = false;
 
+bool  doMVC = true;  // now always true
+
+// ADC
 const float ADC_VREF = 3.3f;
 const int   ADC_MAX  = 4095;
 
-enum Phase { CAL_REST, CAL_AIRCURL_READY, CAL_AIRCURL_RUN, CAL_MVC_QUERY, CAL_MVC_RUN, RUN };
+// Phases: MVC is no longer optional
+enum Phase { CAL_REST, CAL_AIRCURL_READY, CAL_AIRCURL_RUN, CAL_MVC_RUN, RUN };
 Phase phase = CAL_REST;
 
 unsigned long lastSampleMs = 0;
@@ -82,10 +87,10 @@ void resetRestStats() {
 
 void welfordAdd(double x) {
   restN++;
-  double delta = x - restMean;
-  restMean += delta / (double)restN;
-  double delta2 = x - restMean;
-  restM2 += delta * delta2;
+  double d  = x - restMean;
+  restMean += d / (double)restN;
+  double d2 = x - restMean;
+  restM2   += d * d2;
 }
 
 float computeStd() {
@@ -99,14 +104,15 @@ float percentile95(float* arr, int n) {
   if (n <= 0) return 0.0f;
   static float tmp[AIRCURL_MAX_SAMPLES]; 
   for (int i=0; i<n; ++i) tmp[i] = arr[i];
+  // insertion sort (n is small enough)
   for (int i=1; i<n; ++i) {
     float key = tmp[i]; int j = i-1;
     while (j >= 0 && tmp[j] > key) { tmp[j+1] = tmp[j]; j--; }
     tmp[j+1] = key;
   }
   int idx = (int)floorf(0.95f * (n - 1));
-  if (idx < 0) idx = 0;
-  if (idx >= n) idx = n-1;
+  if (idx < 0)   idx = 0;
+  if (idx >= n)  idx = n-1;
   return tmp[idx];
 }
 
@@ -122,17 +128,19 @@ void setThresholds() {
   mu_rest = (float)restMean;
   std_rest = computeStd();
 
+  // activity thresholds with a minimum guard band
   thr_on = mu_rest + K_STD * std_rest;
   if (thr_on < mu_rest + MARGIN_CNTS) thr_on = mu_rest + MARGIN_CNTS;
   thr_dn = mu_rest + HYST_FACTOR * (thr_on - mu_rest);
 
-  float base = 1.20f * P95_air;        // 20% above air-curl
-  if (doMVC && MVC95 > 0.0f) {
-    float mvcFloor = 0.25f * MVC95;    // 25% of MVC
+  // lift threshold from air-curl and MVC (always using MVC now)
+  float base = 1.20f * P95_air;        // 20% above air-curl typical peak
+  if (MVC95 > 0.0f) {
+    float mvcFloor = 0.25f * MVC95;    // at least 25% of MVC
     if (base < mvcFloor) base = mvcFloor;
   }
 
-  // prevent  high thresholds
+  // cap extreme rise
   float maxRise = 400.0f; 
   if (base > mu_rest + maxRise) base = mu_rest + maxRise;
 
@@ -142,7 +150,7 @@ void setThresholds() {
   Serial.print(F("Rest mean: ")); Serial.println(mu_rest, 1);
   Serial.print(F("Rest std : ")); Serial.println(std_rest, 1);
   Serial.print(F("P95_air  : ")); Serial.println(P95_air, 1);
-  if (doMVC) { Serial.print(F("MVC95    : ")); Serial.println(MVC95, 1); }
+  Serial.print(F("MVC95    : ")); Serial.println(MVC95, 1);
   Serial.print(F("thr_on   : ")); Serial.println(thr_on, 1);
   Serial.print(F("thr_dn   : ")); Serial.println(thr_dn, 1);
   Serial.print(F("thr_lift : ")); Serial.println(thr_lift_emg, 1);
@@ -151,13 +159,13 @@ void setThresholds() {
   Serial.println(F("smooth\tthr_on\tthr_lift_emg\tactive\temg_lift")); // Plotter header
 }
 
-// Calibration Flow 
+// ---------- phase transitions ----------
 void startRestPhase() {
   phase = CAL_REST;
   phaseStartMs = millis();
   resetRestStats();
   instruct(F("REST CALIBRATION (4 s):\n"
-             "Place forearm supported, fully relaxed.\n"
+             "Place forearm on table, fully relaxed.\n"
              "Don't move or talk. Collecting baseline..."));
 }
 
@@ -165,7 +173,7 @@ void startAirReady() {
   phase = CAL_AIRCURL_READY;
   phaseStartMs = millis();
   instruct(F("AIR-CURL CAPTURE (~10 s):\n"
-             "Get ready to do 2-3 slow 'air curls' (no load).\n"
+             "Get ready to do 2-3 slow air curls.\n"
              "Starts in 3 seconds..."));
 }
 
@@ -176,16 +184,8 @@ void startAirRun() {
   Serial.println(F("Go! Slow curls now..."));
 }
 
-void startMVCQuery() {
-  phase = CAL_MVC_QUERY;
-  phaseStartMs = millis();
-  instruct(F("OPTIONAL MVC (max squeeze):\n"
-             "Press 'm' within 5 s to include a 5 s MVC capture.\n"
-             "Otherwise we'll skip."));
-}
-
 void startMVC() {
-  doMVC = true;
+  doMVC = true;                    // always true now
   phase = CAL_MVC_RUN;
   phaseStartMs = millis();
   mvcN = 0;
@@ -216,22 +216,16 @@ void myo_setup() {
   smooth = (float)raw;
 
   instruct(F("MyoWare Guided Calibration\n"
-             "- Signal on A0 (pin 14)\n"
              "- Press 'r' anytime to restart calibration\n"));
 
   startRestPhase();
 }
 
 void myo_loop() {
-  // Commands
   if (Serial.available()) {
     char c = Serial.read();
     if (c == 'r' || c == 'R') {
       startRestPhase();
-      return;
-    }
-    if (phase == CAL_MVC_QUERY && (c == 'm' || c == 'M')) {
-      startMVC();
       return;
     }
   }
@@ -248,11 +242,10 @@ void myo_loop() {
     case CAL_REST: {
       welfordAdd((double)smooth);
       if (now - phaseStartMs >= 4000) {   // 4 s
-        // lock values
-        mu_rest = (float)restMean;
+        mu_rest  = (float)restMean;
         std_rest = computeStd();
         Serial.print(F("Rest mean=")); Serial.print(mu_rest,1);
-        Serial.print(F(", std=")); Serial.println(std_rest,1);
+        Serial.print(F(", std="));     Serial.println(std_rest,1);
         startAirReady();
       } else if (((now - phaseStartMs) % 1000) < SAMPLE_PERIOD_MS) {
         int left = 4 - (int)((now - phaseStartMs)/1000);
@@ -274,20 +267,11 @@ void myo_loop() {
       if (now - phaseStartMs >= AIRCURL_MS) {
         P95_air = percentile95(airBuf, airN);
         Serial.print(F("Air-curl P95=")); Serial.println(P95_air,1);
-        startMVCQuery();
+        // Immediately start MVC 
+        startMVC();
       } else if (((now - phaseStartMs) % 1000) < SAMPLE_PERIOD_MS) {
         int left = (int)((AIRCURL_MS - (now - phaseStartMs) + 999)/1000);
         Serial.print(F("...air-curl ")); Serial.print(left); Serial.println(F(" s"));
-      }
-    } break;
-
-    case CAL_MVC_QUERY: {
-      if (now - phaseStartMs >= 5000) {
-        doMVC = false;
-        finishCalibration();
-      } else if (((now - phaseStartMs) % 1000) < SAMPLE_PERIOD_MS) {
-        int left = 5 - (int)((now - phaseStartMs)/1000);
-        Serial.print(F("Press 'm' to include MVC (")); Serial.print(left); Serial.println(F(" s)"));
       }
     } break;
 
@@ -321,7 +305,7 @@ void myo_loop() {
         } else exit_ctr = 0;
       }
 
-      // emg_lift detection
+      // emg_lift detection (needs to hold for LIFT_HOLD_MS)
       if (smooth >= thr_lift_emg) {
         if (!emg_lift) {
           if (liftStartMs == 0) liftStartMs = now;
@@ -332,22 +316,22 @@ void myo_loop() {
         liftStartMs = 0;
       }
 
-      // LED on when active
+      // LED on when active (optional)
       // digitalWrite(LED_PIN, active ? HIGH : LOW);
 
+      // Debug stream (optional)
       // Serial.print(smooth,1); Serial.print('\t');
       // Serial.print(thr_on,1); Serial.print('\t');
       // Serial.print(thr_lift_emg,1); Serial.print('\t');
       // Serial.print(active ? 1 : 0); Serial.print('\t');
       // Serial.println(emg_lift ? 1 : 0);
-    } 
-    
-    break;
+    } break;
   }
 }
 
-  // Set values so we can access them from main
-  bool  myo_is_active() { return active; }
-  bool  myo_is_lift()   { return emg_lift; }
-  float myo_get_smooth(){ return smooth; }
+// public getters
+bool  myo_is_active() { return active; }
+bool  myo_is_lift()   { return emg_lift; }
+float myo_get_smooth(){ return smooth; }
+
 } 

@@ -1,10 +1,8 @@
 #include <Arduino.h>
-
 #include "Accelerometer/Accelerometer.h"
 #include "Myoware/Myoware.h"
 #include "ForceSensors/ForceSensors.h"
 #include "MotorAssist/MotorAssist.h"
-
 #include "Accelerometer/Accelerometer.cpp"
 #include "Accelerometer/AccelerometerInternal.cpp"
 #include "Myoware/Myoware.cpp"
@@ -19,9 +17,11 @@ namespace ForceInternal {
   float force_getSumN();
   float force_getWeightKg();
 }
+
 namespace AccelInternal {
-  float accel_getAmag();
+  float accel_getAmag();   
 }
+
 namespace MotorInternal {
   void  motor_setWeightKg(float wkg);
   void  motor_setElbowAngleRad(float th);
@@ -30,33 +30,39 @@ namespace MotorInternal {
   float motor_getMotorCurrentA();
 }
 
-// Modules
 Accel::Module       accel;
 Myo::Module         myo;
 Force::Module       force;
-MotorTorque::Module motor;   
+MotorTorque::Module motor;
 
-// Periods
-static const uint32_t MYO_PERIOD_MS   = 10;   // ~100 Hz
-static const uint32_t ACCEL_PERIOD_MS = 20;   // ~50 Hz
-static const uint32_t FORCE_PERIOD_MS = 160;  // ~6 Hz (force delays ~150 ms internally)
+// timing periods
+static const uint32_t MYO_PERIOD_MS   = 10;   // 100 Hz
+static const uint32_t ACCEL_PERIOD_MS = 20;   // 50 Hz
+static const uint32_t FORCE_PERIOD_MS = 120;  
 static uint32_t lastMyoMs   = 0;
 static uint32_t lastAccelMs = 0;
 static uint32_t lastForceMs = 0;
 
-// Force thresholds (N)
-static const float SUMN_ON_N   = 8.0f;
-static const float SUMN_OFF_N  = 1.5f;
+// force thresholds 
+static const float SUMN_ON_N   = 5.0f;
+static const float SUMN_OFF_N  = 1.5f;  // this will drop vote sooner when force falls
 
-// Motion thresholds (|amag-1|)
-static const float AMAG_DELTA_ON  = 0.12f;
-static const float AMAG_DELTA_OFF = 0.05f;
+// motion thresholds
+static const float AMAG_DELTA_ON  = 0.12f;  // enter moving
+static const float AMAG_DELTA_OFF = 0.07f;  // exit moving 
+
+// entry gaurd
+static const float MIN_FORCE_FOR_EMG_MOTION_LIFT = 0.30f; 
 
 // FSM timing
-static const uint32_t ENTER_MS   = 120;  // NO_LIFT -> LIFT
-static const uint32_t EXIT_MS    = 300;  // LIFT -> HOLD
-static const uint32_t RELEASE_MS = 250;  // HOLD -> NO_LIFT 
-static const float    HOLD_MIN_N = 2.0f;
+static const uint32_t ENTER_MS   = 90; // NO_LIFT to LIFT 
+static const uint32_t EXIT_MS    = 80;  // LIFT to HOLD faster
+static const uint32_t RELEASE_MS = 350; // HOLD to NO_LIFT
+static const float    HOLD_MIN_N = 2.0f; 
+
+// startup, avoids immediate lift
+static uint32_t bootMs = 0;
+static const uint32_t STARTUP_INHIBIT_MS = 3000; // 3 s after power on
 
 static inline bool hyst(bool prev, bool onCond, bool offCond) {
   if (!prev && onCond)  return true;
@@ -69,19 +75,30 @@ static State state = State::NO_LIFT;
 
 // timers
 static uint32_t votesOnStartMs  = 0; // entering LIFT
-static uint32_t votesOffStartMs = 0; // LIFT -> HOLD
-static uint32_t releaseStartMs  = 0; // HOLD -> NO_LIFT
+static uint32_t votesOffStartMs = 0; // LIFT to HOLD
+static uint32_t releaseStartMs  = 0; // HOLD to NO_LIFT
 
+// voters
+static bool v_force  = false;
+static bool v_motion = false;
+
+// asymmetric EMA for force 
 static float sumN_ema = 0.0f;
-static const float SUMN_EMA_ALPHA = 0.25f;
+static inline float ema_asym(float prev, float x) {
+  const float alpha_up = 0.60f;  // reacts quickly
+  const float alpha_dn = 0.25f;  
+  const float a = (x > prev) ? alpha_up : alpha_dn;
+  return a * x + (1.0f - a) * prev;
+}
 
+// torque tick
 static uint32_t lastAssistTickUs = 0;
 
 // Using a constant for now
 static const float DEFAULT_ASSIST_FRACTION = 0.30f;
 
 static inline float getElbowAngleRadFallback() {
-  return 1.5707963f; // π/2 rad (arm ~horizontal)
+  return 1.5707963f; 
 }
 
 void setup() {
@@ -95,17 +112,25 @@ void setup() {
   accel.setup();
   force.setup();
   motor.setup();   // Torque calculations
+  bootMs = millis();
+
+  // voter/timers 
+  v_motion = false;
+  v_force  = false;
+  votesOnStartMs  = votesOffStartMs = releaseStartMs = 0;
+  state = State::NO_LIFT;
 
   lastAssistTickUs = micros();
 
   Serial.println();
-  Serial.println(F("[Main] EMG + ACCEL + FORCE + MOTOR with FSM {NO_LIFT, LIFT, HOLD} + 3-way voting"));
-  Serial.println(F("[Keys] 't' = tare force (handled inside force module)."));
+  Serial.println(F("[Main] FSM Started"));
+  //Serial.println(F("[Keys] 't' = tare force"));
   Serial.println();
 }
 
 void loop() {
   const uint32_t now = millis();
+  const bool armed = (now - bootMs) > STARTUP_INHIBIT_MS;
 
   // MyoWare
   if (now - lastMyoMs >= MYO_PERIOD_MS) {
@@ -125,37 +150,60 @@ void loop() {
     lastForceMs = now;
   }
 
+  // Voters
   const bool v_emg = myo.isLiftActive();
 
-  float sumN = ForceInternal::force_getSumN();
+  float sumN = ForceInternal::force_getSumN();        // N
   if (sumN_ema == 0.0f) sumN_ema = sumN;
-  sumN_ema = SUMN_EMA_ALPHA * sumN + (1.0f - SUMN_EMA_ALPHA) * sumN_ema;
+  sumN_ema = ema_asym(sumN_ema, sumN);
 
-  static bool v_force = false;
+  // Force vote 
   const bool forceOn  = (sumN_ema > SUMN_ON_N);
   const bool forceOff = (sumN_ema < SUMN_OFF_N);
   v_force = hyst(v_force, forceOn, forceOff);
 
-  const float amag = AccelInternal::accel_getAmag();
-  const float dmag = fabsf(amag - 1.0f);
-  static bool v_motion = false;
+  // Motion vote 
+  const float amag = AccelInternal::accel_getAmag();  // g
+  const float dmag = fabsf(amag - 1.0f);              // 0 at rest
   const bool motionOn  = (dmag > AMAG_DELTA_ON);
   const bool motionOff = (dmag < AMAG_DELTA_OFF);
   v_motion = hyst(v_motion, motionOn, motionOff);
 
   const uint8_t votes = (uint8_t)v_emg + (uint8_t)v_force + (uint8_t)v_motion;
 
+  // Debugs
+  // Serial.printf("[VOTE] votes=%u [%s%s%s ] forceN=%.2f dmag=%.3f\n",
+  //               votes,
+  //               v_emg?"EMG ":"",
+  //               v_force?"FORCE ":"",
+  //               v_motion?"MOTION ":"",
+  //               sumN_ema, dmag);
+
   // --- FSM ---
   switch (state) {
     case State::NO_LIFT: {
-      if (votes >= 2) {
+      // NO_LIFT case:
+      const bool twoVotes = ((uint8_t)v_emg + (uint8_t)v_force + (uint8_t)v_motion) >= 2;
+
+      const bool canEnterLift =
+          (v_force && (v_emg || v_motion)) ||
+          (v_emg && v_motion && sumN_ema > MIN_FORCE_FOR_EMG_MOTION_LIFT);
+
+      if (armed && canEnterLift) {
         if (votesOnStartMs == 0) votesOnStartMs = now;
         if ((now - votesOnStartMs) >= ENTER_MS) {
           state = State::LIFT;
           votesOnStartMs = 0;
           releaseStartMs = 0;
           ForceInternal::force_setLiftActive(true);
-          Serial.println(F("[FSM] LIFT"));
+
+          // Debug print
+          Serial.printf("[FSM] LIFT votes=%u [%s%s%s ] forceN=%.2f dmag=%.3f\n",
+                        votes,
+                        v_emg?"EMG ":"",
+                        v_force?"FORCE ":"",
+                        v_motion?"MOTION ":"",
+                        sumN_ema, dmag);
         }
       } else {
         votesOnStartMs = 0;
@@ -163,12 +211,32 @@ void loop() {
     } break;
 
     case State::LIFT: {
-      if (votes <= 1) {
+      const uint8_t votesNow = (uint8_t)v_emg + (uint8_t)v_force + (uint8_t)v_motion;
+      const bool forceLow    = (sumN_ema < HOLD_MIN_N);
+      const bool quietish    = (votesNow <= 1);
+      const bool forceVeryLow = (sumN_ema < 1.5f);
+      const bool emgInactive  = !v_emg;
+
+      // Immediate drop to HOLD if your hand really unloaded and EMG isn't firing
+      if (forceVeryLow && emgInactive) {
+        state = State::HOLD;
+        votesOffStartMs = 0;
+        Serial.printf("[FSM] HOLD votes=%u [...]", votesNow);
+        break;
+      }
+
+      // Exit LIFT faster when you set weight down, or it's quiet
+      if (forceLow || quietish) {
         if (votesOffStartMs == 0) votesOffStartMs = now;
         if ((now - votesOffStartMs) >= EXIT_MS) {
           state = State::HOLD;
           votesOffStartMs = 0;
-          Serial.println(F("[FSM] HOLD"));
+          Serial.printf("[FSM] HOLD votes=%u [%s%s%s ] forceN=%.2f dmag=%.3f\n",
+                        votesNow,
+                        v_emg?"EMG ":"",
+                        v_force?"FORCE ":"",
+                        v_motion?"MOTION ":"",
+                        sumN_ema, dmag);
         }
       } else {
         votesOffStartMs = 0;
@@ -176,10 +244,42 @@ void loop() {
     } break;
 
     case State::HOLD: {
-      const bool emgQuiet    = !v_emg;
-      const bool motionQuiet = !v_motion;
-      const bool forceLow    = (sumN_ema < HOLD_MIN_N);
-      const bool quiet       = emgQuiet && motionQuiet && forceLow;
+      const uint8_t votesNow = (uint8_t)v_emg + (uint8_t)v_force + (uint8_t)v_motion;
+
+      // Reuse the stricter entry rule for HOLD to LIFT
+      const bool canEnterLift =
+          (v_force && (v_emg || v_motion)) ||
+          (v_emg && v_motion && sumN_ema > MIN_FORCE_FOR_EMG_MOTION_LIFT);
+
+      const bool forceLow   = (sumN_ema < HOLD_MIN_N);
+      const bool votesQuiet = (votesNow <= 1);
+      const bool quiet = (sumN_ema < 1.5f) && (votesNow <= 1);
+
+      // quicker escape when basically zero contact
+      static const float    FORCE_ESCAPE_N  = 0.30f; // was 0.50 during calibration, I think this value is better
+      static const uint32_t ESCAPE_MS       = 250;   // was 400
+      static uint32_t forceEscapeStartMs    = 0;
+
+      if (sumN_ema < FORCE_ESCAPE_N) {
+        if (forceEscapeStartMs == 0) forceEscapeStartMs = now;
+        if (now - forceEscapeStartMs >= ESCAPE_MS) {
+          state = State::NO_LIFT;
+          releaseStartMs = 0;
+          forceEscapeStartMs = 0;
+          ForceInternal::force_setLiftActive(false);
+
+          // More debug prints
+          Serial.printf("[FSM] NO_LIFT votes=%u [%s%s%s ] forceN=%.2f dmag=%.3f\n",
+                        votesNow,
+                        v_emg?"EMG ":"",
+                        v_force?"FORCE ":"",
+                        v_motion?"MOTION ":"",
+                        sumN_ema, dmag);
+          break;
+        }
+      } else {
+        forceEscapeStartMs = 0;
+      }
 
       if (quiet) {
         if (releaseStartMs == 0) releaseStartMs = now;
@@ -187,20 +287,33 @@ void loop() {
           state = State::NO_LIFT;
           releaseStartMs = 0;
           ForceInternal::force_setLiftActive(false);
-          Serial.println(F("[FSM] NO_LIFT"));
+
+          // Debug prints
+          Serial.printf("[FSM] NO_LIFT votes=%u [%s%s%s ] forceN=%.2f dmag=%.3f\n",
+                        votesNow,
+                        v_emg?"EMG ":"",
+                        v_force?"FORCE ":"",
+                        v_motion?"MOTION ":"",
+                        sumN_ema, dmag);
         }
       } else {
         releaseStartMs = 0;
       }
 
-      // Return to LIFT if ≥2 votes again
-      const uint8_t votesNow = (uint8_t)v_emg + (uint8_t)v_force + (uint8_t)v_motion;
-      if (votesNow >= 2) {
+      // re-enter LIFT 
+      if (canEnterLift) {
         state = State::LIFT;
         votesOffStartMs = 0;
         releaseStartMs  = 0;
         ForceInternal::force_setLiftActive(true);
-        Serial.println(F("[FSM] HOLD, LIFT"));
+
+        // Debug
+        Serial.printf("[FSM] HOLD, LIFT votes=%u [%s%s%s ] forceN=%.2f dmag=%.3f\n",
+                      votesNow,
+                      v_emg?"EMG ":"",
+                      v_force?"FORCE ":"",
+                      v_motion?"MOTION ":"",
+                      sumN_ema, dmag);
       }
     } break;
   }
@@ -208,7 +321,6 @@ void loop() {
   // TORQUE STUFF
   const bool assistEnabled = (state != State::NO_LIFT);
   const uint32_t nowUs = micros();
-  const float dtSec = max( (nowUs - lastAssistTickUs) * 1e-6f, 1e-3f );
   lastAssistTickUs = nowUs;
 
   if (assistEnabled) {
@@ -216,37 +328,20 @@ void loop() {
     const float elbowAngleRad = getElbowAngleRadFallback();
     const float assistFrac    = DEFAULT_ASSIST_FRACTION;
 
-    // Feed inputs to motor internals
     MotorInternal::motor_setWeightKg(weightKg);
     MotorInternal::motor_setElbowAngleRad(elbowAngleRad);
     MotorInternal::motor_setAssistFraction(assistFrac);
 
     motor.runTestStep();
 
-    const float tauOutNm = MotorInternal::motor_getOutputTorqueNm();
-    const float motorA   = MotorInternal::motor_getMotorCurrentA();
-
-    Serial.printf("[ASSIST] %s  τOut=%.2f Nm  I=%.2f A  W=%.2f kg  θ=%.2f rad\n",
+    // Debug
+    Serial.printf("[ASSIST] %s  W=%.2f kg\n",
                   (state == State::LIFT ? "LIFT" : "HOLD"),
-                  tauOutNm, motorA, weightKg, elbowAngleRad);
+                  weightKg);
 
-    // TODO: Command driver
-    // driverWritePWM(pwm);
-
+    // TODO: driverWritePWM(pwm);
   } else {
-    //  set motor command to zero.
     // driverWritePWM(0);
     // Serial.println("[ASSIST] OFF");
   }
-
-  /*
-  const float W_kg = ForceInternal::force_getWeightKg();
-  Serial.print("state="); Serial.print(state==State::NO_LIFT?"NO_LIFT":(state==State::LIFT?"LIFT":"HOLD"));
-  Serial.print(", votes="); Serial.print((int)((uint8_t)v_emg + (uint8_t)v_force + (uint8_t)v_motion));
-  Serial.print(", emg="); Serial.print(v_emg);
-  Serial.print(", forceN="); Serial.print(sumN_ema, 2);
-  Serial.print(", motion="); Serial.print(v_motion);
-  Serial.print(", amag="); Serial.print(amag, 2);
-  Serial.print(", W_kg="); Serial.println(W_kg, 2);
-  */
 }
