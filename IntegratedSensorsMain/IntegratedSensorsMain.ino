@@ -33,6 +33,7 @@ namespace MotorInternal {
   void  motor_setAssistFraction(float a);
   float motor_getOutputTorqueNm();
   float motor_getMotorCurrentA();
+  float motor_getElbowTorqueNm();
 }
 
 Accel::Module       accel;
@@ -342,11 +343,12 @@ void loop() {
     const float weightKg      = ForceInternal::force_getWeightKg();
     const float weightLb      = ForceInternal::force_getWeightLb();
     const float elbowAngleRad = getElbowAngleRadFallback();
-    const float elbowTorque =   MotorInternal::motor_getElbowTorqueNm(); 
+    //const float elbowTorque =   MotorInternal::motor_getElbowTorqueNm();
+    const float elbowTorque = MotorInternal::motor_getOutputTorqueNm(); 
     const float assistFrac    = DEFAULT_ASSIST_FRACTION;
     const float r_spool = 0.02761;
     const float l_forearm = 0.25;
-    const float kt = 0.69;
+    const float Kt = 0.69;
 
     MotorInternal::motor_setWeightKg(weightKg);
     MotorInternal::motor_setElbowAngleRad(elbowAngleRad);
@@ -355,14 +357,15 @@ void loop() {
 
     Serial.printf("[FSM] Made it here, sending value\n");
 
-    controller.torqueToCurrent(elbowTorque, r_spool, l_forearm,  kt);
+    const float I_set = controller.torqueToCurrent(elbowTorque, r_spool, l_forearm, Kt);
+    controller.setIsetpoint(I_set);
 
   } else {
-    // assist off in NO_LIFT and PRELIFT
-        const float weightKg      = ForceInternal::force_getWeightKg();
+    
+    const float weightKg      = ForceInternal::force_getWeightKg();
     const float weightLb      = ForceInternal::force_getWeightLb();
     const float elbowAngleRad = getElbowAngleRadFallback();
-    const float elbowTorque =   MotorInternal::motor_getElbowTorqueNm(); 
+    const float elbowTorque = MotorInternal::motor_getElbowTorqueNm();
     const float assistFrac    = DEFAULT_ASSIST_FRACTION;
     const float r_spool = 0.02761;
     const float l_forearm = 0.25;
