@@ -363,7 +363,7 @@ void loop() {
   lastAssistTickUs = nowUs;
 
   if (assistEnabled) {
-    Serial.printf("[FSM] Made it here, beginning of assistance\n");
+    // Serial.printf("[FSM] Made it here, beginning of assistance\n");
 
     const float weightKg      = ForceInternal::force_getWeightKg();
     const float weightLb      = ForceInternal::force_getWeightLb();
@@ -376,11 +376,15 @@ void loop() {
     MotorInternal::motor_setAssistFraction(assistFrac);
     motor.runTestStep();
 
-    Serial.printf("[FSM] Made it here, sending value\n");
+    // Serial.printf("[FSM] Made it here, sending value\n");
+
+    Serial.printf("[FSM] Need %f Nm of Torque\n", elbowTorque);
+    // elbowTorque = 7.0f;  // &nm
 
     const float I_set = controller.torqueToCurrent(elbowTorque, r_spool, l_forearm, Kt);
     const uint16_t duty = controller.currentToPWM(I_set);
-    controller.sendMotorDuty(700);
+    Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
+    controller.sendMotorDuty(duty);
 
   } else {
     

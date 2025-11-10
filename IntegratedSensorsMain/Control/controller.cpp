@@ -57,8 +57,8 @@ float Controller::control(float i_meas, uint16_t dt) {
 }
 
 // current PWM conversion
-uint16_t Controller::currentToPWM(float I) {
-  uint16_t duty = (int)(I/MAX_CURRENT)*MAX_PWM;
+uint16_t Controller::currentToPWM(float i) {
+  uint16_t duty = (i/MAX_CURRENT)*float(MAX_PWM) + MIN_PWM;
   return duty;
 }
 
