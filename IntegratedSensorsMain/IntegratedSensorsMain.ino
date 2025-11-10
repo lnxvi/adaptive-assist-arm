@@ -94,7 +94,6 @@ static bool lat_gotPWMNonzero   = false;
 
 // Assist rising-edge detect
 static bool prevAssistEnabled = false;
-// ------------------------------------------------------------
 
 // timing periods
 static const uint32_t MYO_PERIOD_MS   = 10;   // 100 Hz
@@ -514,10 +513,11 @@ void loop() {
 
     const float I_set   = controller.torqueToCurrent(elbowTorque, r_spool, l_forearm, Kt);
     const uint16_t duty = controller.currentToPWM(I_set);
+    Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
+    //controller.sendMotorDuty(700); 
+    controller.sendMotorDuty(duty);
 
-    controller.sendMotorDuty(700); // non-zero => motor spins
-
-    // First non-zero PWM => log “motor spins”
+    // Logging
     if (lat_measuring && !lat_gotPWMNonzero) {
       t_pwmNonzero_us = micros();
 
@@ -546,6 +546,5 @@ void loop() {
 
     motor.runTestStep();
     controller.sendMotorDuty(0);
-    // Do not finalize latency cycle here—only when non-zero PWM is issued.
   }
 }
