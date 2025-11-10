@@ -71,7 +71,7 @@ static inline void log_line(const char* event, const char* detail, uint32_t valu
   logFile.flush();
 }
 
-// ----------------- Latency instrumentation -----------------
+// Latency logging 
 // Vote edge tracking
 static bool prev_v_emg   = false;
 static bool prev_v_force = false;
@@ -85,7 +85,7 @@ static uint32_t t_liftEnter_us    = 0;
 static uint32_t t_assistEnable_us = 0;
 static uint32_t t_pwmNonzero_us   = 0;
 
-// Latching per measurement “cycle”
+// Latching per measurement cycle
 static bool lat_measuring       = false; // true after first EMG/FORCE rise
 static bool lat_gotTwoVotes     = false;
 static bool lat_gotLift         = false;
