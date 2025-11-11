@@ -122,7 +122,7 @@ static const float    HOLD_MIN_N = 2.0f;
 
 // PRELIFT requirements
 static const uint8_t  PRELIFT_VOTES_REQ = 2;
-static const uint32_t PRELIFT_DWELL_MS  = 3000; // 3 seconds
+static const uint32_t PRELIFT_DWELL_MS  = 150; // 3 seconds
 
 // startup, avoids immediate lift
 static uint32_t bootMs = 0;
