@@ -6,8 +6,6 @@
 #include "Myoware/Myoware.h"
 #include "ForceSensors/ForceSensors.h"
 #include "MotorAssist/MotorAssist.h"
-
-// These #includes of .cpps are unusual but keeping as you have it:
 #include "Accelerometer/Accelerometer.cpp"
 #include "Accelerometer/AccelerometerInternal.cpp"
 #include "Myoware/Myoware.cpp"
@@ -45,7 +43,6 @@ Force::Module         force;
 MotorTorque::Module   motor;
 Controller            controller;
 
-// ----------------- Logging (Teensy 4.1 SD) -----------------
 #ifndef BUILTIN_SDCARD
 #define BUILTIN_SDCARD 254
 #endif
@@ -67,7 +64,6 @@ static inline void log_line(const char* event, const char* detail, uint32_t valu
   snprintf(buf, sizeof(buf), "%lu,%s,%s,%lu",
            (unsigned long)micros(), event, detail ? detail : "", (unsigned long)value_us);
   logFile.println(buf);
-  // For simplicity, flush each line. For higher throughput, flush less often.
   logFile.flush();
 }
 
@@ -122,7 +118,7 @@ static const float    HOLD_MIN_N = 2.0f;
 
 // PRELIFT requirements
 static const uint8_t  PRELIFT_VOTES_REQ = 2;
-static const uint32_t PRELIFT_DWELL_MS  = 150; // 3 seconds
+static const uint32_t PRELIFT_DWELL_MS  = 150; 
 
 // startup, avoids immediate lift
 static uint32_t bootMs = 0;
@@ -266,7 +262,7 @@ void loop() {
 
   const uint8_t votes = (uint8_t)v_emg + (uint8_t)v_force + (uint8_t)v_motion;
 
-  // -------------- Latency tracking: vote edges & twoVotes --------------
+  // Latency Logging
   // EMG rising edge
   if (!prev_v_emg && v_emg) {
     t_emgRise_us = micros();
@@ -315,9 +311,8 @@ void loop() {
 
   prev_v_emg   = v_emg;
   prev_v_force = v_force;
-  // --------------------------------------------------------------------
 
-  // --- FSM ---
+  // FSM 
   switch (state) {
     case State::NO_LIFT: {
       const bool canEnterLift =
