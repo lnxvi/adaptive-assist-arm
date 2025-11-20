@@ -31,7 +31,7 @@ Controller::Controller(float Kp_init, float Ki_init, float Kd_init)
 
 // torque-current conversion
 float Controller::torqueToCurrent(float torque, float r_spool, float l_forearm, float Kt) {
-  Serial.println(F("[Controller] torqueToCurrent called"));
+  //Serial.println(F("[Controller] torqueToCurrent called"));
   return (torque*r_spool)/(l_forearm*Kt);
 }
 
