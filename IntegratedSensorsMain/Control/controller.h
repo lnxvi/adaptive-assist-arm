@@ -18,7 +18,7 @@ class Controller {
 
         float const MAX_CURRENT = 3.0f;
         uint16_t MAX_PWM = 1023;
-        uint16_t MIN_PWM = 200;
+        uint16_t MIN_PWM = 500;
 
     public:
         Controller(float Kp = 0.0, float Ki = 0.0, float Kd = 0.0);  // constructor
