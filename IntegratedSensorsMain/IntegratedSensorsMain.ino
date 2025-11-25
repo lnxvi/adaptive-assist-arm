@@ -1,9 +1,11 @@
 #include <Arduino.h>
 #include <TimerThree.h>
+#include <IntervalTimer.h>
 #include "Accelerometer/Accelerometer.h"
 #include "Myoware/Myoware.h"
 #include "ForceSensors/ForceSensors.h"
 #include "MotorAssist/MotorAssist.h"
+#include "Control/controller.h"
 
 // These #includes of .cpps are unusual but keeping as you have it:
 #include "Accelerometer/Accelerometer.cpp"
@@ -15,7 +17,6 @@
 #include "MotorAssist/MotorAssist.cpp"
 #include "MotorAssist/MotorAssistInternal.cpp"
 #include "Control/controller.cpp"
-#include "Control/controller.h"
 
 namespace ForceInternal {
   void  force_setLiftActive(bool active);
@@ -41,7 +42,6 @@ Accel::Module       accel;
 Myo::Module         myo;
 Force::Module       force;
 MotorTorque::Module motor;
-Controller controller;
 
 // timing periods
 static const uint32_t MYO_PERIOD_MS   = 10;   // 100 Hz
@@ -80,6 +80,18 @@ static const uint32_t STARTUP_INHIBIT_MS = 3000; // 3 s after power on
 const float r_spool = 0.02761;
 const float l_forearm = 0.25;
 const float Kt = 0.69;
+
+// PID and controller params
+static const uint32_t LOOP_MS = 10;  // 10 ms, internal timing
+static const uint32_t LOOP_US = 10000;  // 10000 us = 10 ms, IntervalTimer objects need interval period in microseconds
+static const uint16_t RESOLUTION = 1024;  // Teensy ADC resolution
+static const float VREF = 3.3f;  // Teensy ADC reference voltage
+static const float CS_SCALE = 1.1;  // DRV8874 V/A scale
+static float Kp = 5.0f;  // adjust as necessary
+static float Ki = 1.0f;  // adjust as necessary 
+bool controlEnabled = false;
+IntervalTimer controlTimer;
+Controller controller(Kp, Ki);
 
 // Motor Pins
 #define nSLEEP 31
@@ -125,6 +137,32 @@ static inline float getElbowAngleRadFallback() {
   return 1.5707963f; 
 }
 
+// container function for motor loop
+void doControl() {
+  if (controlEnabled) {
+    // sample cs current
+    float sum = 0;
+    int samples = 30;
+    for (int i=0;i<samples;i++) {
+      float V_cs = (analogRead(CS)/(float)RESOLUTION)*VREF;
+      float I = V_cs / CS_SCALE;
+      sum += I;
+      // delay(delayMs);
+    }
+    float i_meas = sum / samples;
+
+    // get error and cmd current
+    float i_cmd = controller.control(i_meas, LOOP_MS);
+
+    // convert pwm
+    uint16_t duty = controller.currentToPWM(i_cmd);
+
+    // send
+    controller.sendMotorDuty(duty);
+  }
+  // else do nothing, no loop action
+}
+
 void setup() {
   Serial.begin(115200);
 #if defined(ARDUINO_TEENSY41)
@@ -144,6 +182,8 @@ void setup() {
 
   Timer3.initialize(40);
   Timer3.pwm(IN1, 0);
+
+  controlTimer.begin(doControl, LOOP_US);
 
   myo.setup();
   accel.setup();
@@ -286,6 +326,8 @@ void loop() {
     } break;
 
     case State::HOLD: {
+
+
       const uint8_t votesNow = votes;
 
       // HOLD to LIFT
@@ -381,12 +423,25 @@ void loop() {
     Serial.printf("[FSM] Need %f Nm of Torque\n", elbowTorque);
     // elbowTorque = 7.0f;  // &nm
 
-    const float I_set = controller.torqueToCurrent(elbowTorque, r_spool, l_forearm, Kt);
-    const uint16_t duty = controller.currentToPWM(I_set);
-    Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
-    controller.sendMotorDuty(duty);
+    // set interal I_setpoint of the controller 
+    controller.setIsetpoint(controller.torqueToCurrent(elbowTorque, r_spool, l_forearm, Kt));
+
+    // TODO true loop goes here, replaces everything below
+    // enabled control loop
+    if (!controlEnabled) {
+      controlEnabled = true;
+    }
+
+    // const uint16_t duty = controller.currentToPWM(I_set);
+    // Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
+    // controller.sendMotorDuty(duty);
 
   } else {
+    // disable contol loop
+    if (controlEnabled) {
+      controlEnabled = false;
+      controller.reset();
+    }
     
     const float weightKg      = ForceInternal::force_getWeightKg();
     const float weightLb      = ForceInternal::force_getWeightLb();
@@ -399,8 +454,8 @@ void loop() {
     MotorInternal::motor_setAssistFraction(assistFrac);
 
     motor.runTestStep();
-    //const float I_set = controller.torqueToCurrent(0, r_spool, l_forearm, Kt);
-    //const uint16_t duty = controller.currentToPWM(I_set);
-    controller.sendMotorDuty(0);
+    const float I_set = controller.torqueToCurrent(0, r_spool, l_forearm, Kt);
+    const uint16_t duty = controller.currentToPWM(I_set);
+    controller.sendMotorDuty(duty+350);
   }
 }

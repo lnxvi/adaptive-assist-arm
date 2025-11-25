@@ -22,7 +22,9 @@
 #define IN1 9
 #endif
 
-// #define CS A14  // pin 38
+#ifndef CS
+#define CS A14  // pin 38
+#endif
 
 Controller::Controller(float Kp_init, float Ki_init, float Kd_init) 
   : Kp(Kp_init), Ki(Ki_init), Kd(Kd_init), I_setpoint(0.0f), 
