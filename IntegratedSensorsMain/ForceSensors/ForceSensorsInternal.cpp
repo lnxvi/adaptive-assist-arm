@@ -119,16 +119,16 @@ namespace ForceInternal {
       hasTare[i] = true;
     }
 
-    Serial.print("TARE SET. G0(raw idx 0..3) = [");
-    for (int i = 0; i < 4; ++i) {
-      Serial.print(G0[i], 8);
-      if (i < 3) Serial.print(", ");
-    }
-    Serial.println("]");
+    // Serial.print("TARE SET. G0(raw idx 0..3) = [");
+    // for (int i = 0; i < 4; ++i) {
+    //   Serial.print(G0[i], 8);
+    //   if (i < 3) Serial.print(", ");
+    // }
+    // Serial.println("]");
 
-    Serial.print("Mapping complete. Logical (I,M,R,P) -> raw idx = [");
-    for (int i=0;i<4;++i){ Serial.print(mapIdx[i]); if(i<3) Serial.print(", "); }
-    Serial.println("]");
+    // Serial.print("Mapping complete. Logical (I,M,R,P) -> raw idx = [");
+    // for (int i=0;i<4;++i){ Serial.print(mapIdx[i]); if(i<3) Serial.print(", "); }
+    // Serial.println("]");
 
     // reset per-lift scale to base on tare
     handScaleK_lift = handScaleK_base;
@@ -144,8 +144,8 @@ namespace ForceInternal {
     analogReadAveraging(ADC_AVG);
 
     delay(250);
-    Serial.println("finger_forces: IndexN,MiddleN,RingN,PinkyN | total_kg,total_lb");
-    Serial.println("[Keys] 't' = tare");
+    // Serial.println("finger_forces: IndexN,MiddleN,RingN,PinkyN | total_kg,total_lb");
+    // Serial.println("[Keys] 't' = tare");
     delay(250);
 
     doTareAll(300);

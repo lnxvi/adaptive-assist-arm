@@ -50,25 +50,25 @@ Controller            controller;
 #define BUILTIN_SDCARD 254
 #endif
 
-static File logFile;
+//static File logFile;
 
-static bool log_open() {
-  if (!SD.begin(BUILTIN_SDCARD)) return false;
-  logFile = SD.open("latency.txt", FILE_WRITE);
-  if (!logFile) return false;
-  logFile.println("time_us,event,detail,value_us");
-  logFile.flush();
-  return true;
-}
+// static bool log_open() {
+//   if (!SD.begin(BUILTIN_SDCARD)) return false;
+//   logFile = SD.open("latency.txt", FILE_WRITE);
+//   if (!logFile) return false;
+//   logFile.println("time_us,event,detail,value_us");
+//   logFile.flush();
+//   return true;
+// }
 
-static inline void log_line(const char* event, const char* detail, uint32_t value_us) {
-  if (!logFile) return;
-  char buf[160];
-  snprintf(buf, sizeof(buf), "%lu,%s,%s,%lu",
-           (unsigned long)micros(), event, detail ? detail : "", (unsigned long)value_us);
-  logFile.println(buf);
-  logFile.flush();
-}
+// static inline void log_line(const char* event, const char* detail, uint32_t value_us) {
+//   if (!logFile) return;
+//   char buf[160];
+//   snprintf(buf, sizeof(buf), "%lu,%s,%s,%lu",
+//            (unsigned long)micros(), event, detail ? detail : "", (unsigned long)value_us);
+//   logFile.println(buf);
+//   logFile.flush();
+// }
 
 // Latency logging 
 // Vote edge tracking
@@ -107,8 +107,13 @@ static const float SUMN_ON_N   = 5.0f;
 static const float SUMN_OFF_N  = 1.5f;  // drop vote sooner when force falls
 
 // motion thresholds
-static const float AMAG_DELTA_ON  = 0.12f;  // enter moving
-static const float AMAG_DELTA_OFF = 0.10f;  // exit moving
+// static const float AMAG_DELTA_ON  = 0.12f;  // enter moving
+// static const float AMAG_DELTA_OFF = 0.10f;  // exit moving
+static const float AMAG_DELTA_ON = 0.01f;
+static const float AMAG_DELTA_OFF = 0.005f;
+
+static float amag_baseline = 1.0f;
+static bool amag_baseline_init = false;
 
 // entry guard
 static const float MIN_FORCE_FOR_EMG_MOTION_LIFT = 0.30f;
@@ -121,7 +126,9 @@ static const float    HOLD_MIN_N = 2.0f;
 
 // PRELIFT requirements
 static const uint8_t  PRELIFT_VOTES_REQ = 2;
-static const uint32_t PRELIFT_DWELL_MS  = 150; 
+
+// MAKING LONGER FOR SERIAL PLOTTER, change back to 150
+static const uint32_t PRELIFT_DWELL_MS  = 500; 
 
 // startup, avoids immediate lift
 static uint32_t bootMs = 0;
@@ -193,6 +200,8 @@ static inline float getElbowAngleRadFallback() { return 1.5707963f; }
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("state\tforceN\tvotes");   // header for Serial Plotter
+
 #if defined(ARDUINO_TEENSY41)
   const uint32_t t0 = millis();
   while (!Serial && (millis() - t0 < 2000)) { /* wait */ }
@@ -229,16 +238,16 @@ void setup() {
   lastAssistTickUs = micros();
 
   // Open SD log
-  if (!log_open()) {
-    Serial.println("[LOG] SD open failed (latency.txt).");
-  } else {
-    Serial.println("[LOG] Logging to latency.txt");
-  }
+  // if (!log_open()) {
+  //   // Serial.println("[LOG] SD open failed (latency.txt).");
+  // } else {
+  //   // Serial.println("[LOG] Logging to latency.txt");
+  // }
 
-  Serial.println();
-  Serial.println(F("[Main] FSM Started"));
-  //Serial.println("Checking flash");
-  Serial.println();
+  // Serial.println();
+  // Serial.println(F("[Main] FSM Started"));
+  ////Serial.println("Checking flash");
+  // Serial.println();
 }
 
 void loop() {
@@ -276,11 +285,28 @@ void loop() {
   v_force = hyst(v_force, forceOn, forceOff);
 
   // Motion vote
-  const float amag = AccelInternal::accel_getAmag();  // g
-  const float dmag = fabsf(amag - 1.0f);              // 0 at rest
+  const float amag = AccelInternal::accel_getAmag(); 
+
+  // 1) Initialize baseline once
+  if (!amag_baseline_init) {
+    amag_baseline      = amag;
+    amag_baseline_init = true;
+  }
+
+  // 2)slowly track the rest baseline
+  if (!v_motion) {
+    const float base_alpha = 0.01f;  // very slow EMA so quick motions don't move baseline
+    amag_baseline = base_alpha * amag + (1.0f - base_alpha) * amag_baseline;
+  }
+
+  // 3) Deviation from our own baseline
+  const float dmag = fabsf(amag - amag_baseline);
+
+  // 4) Apply hysteresis
   const bool motionOn  = (dmag > AMAG_DELTA_ON);
   const bool motionOff = (dmag < AMAG_DELTA_OFF);
   v_motion = hyst(v_motion, motionOn, motionOff);
+
 
   const uint8_t votes = (uint8_t)v_emg + (uint8_t)v_force + (uint8_t)v_motion;
 
@@ -288,7 +314,7 @@ void loop() {
   // EMG rising edge
   if (!prev_v_emg && v_emg) {
     t_emgRise_us = micros();
-    log_line("vote_rise", "EMG", 0);
+    //log_line("vote_rise", "EMG", 0);
     if (!lat_measuring) {
       lat_measuring       = true;
       lat_gotTwoVotes     = false;
@@ -305,7 +331,7 @@ void loop() {
   // FORCE rising edge
   if (!prev_v_force && v_force) {
     t_forceRise_us = micros();
-    log_line("vote_rise", "FORCE", 0);
+    //log_line("vote_rise", "FORCE", 0);
     if (!lat_measuring) {
       lat_measuring       = true;
       lat_gotTwoVotes     = false;
@@ -322,7 +348,7 @@ void loop() {
   if (lat_measuring && !lat_gotTwoVotes && votes >= 2) {
     t_twoVotes_us = micros();
     uint32_t twoVotesDelay = (t_firstVote_us) ? (t_twoVotes_us - t_firstVote_us) : 0;
-    log_line("two_votes", "firstVote->twoVotes_us", twoVotesDelay);
+    //log_line("two_votes", "firstVote->twoVotes_us", twoVotesDelay);
     lat_gotTwoVotes = true;
   }
 
@@ -354,7 +380,7 @@ void loop() {
           //               v_force?"FORCE ":"",
           //               v_motion?"MOTION ":"",
           //               sumN_ema, dmag);
-          Serial.printf("[FSM] PRELIFT ENTERED");
+          // Serial.printf("[FSM] PRELIFT ENTERED");
         }
       } else {
         votesOnStartMs = 0;
@@ -367,8 +393,8 @@ void loop() {
         state = State::NO_LIFT;
         preliftStartMs = 0;
         ForceInternal::force_setLiftActive(false);
-        //Serial.printf("[FSM] PRELIFT to NO_LIFT; votes=%u forceN=%.2f\n", votes, sumN_ema);
-        Serial.printf("[FSM] PRELIFT to NO LIFT");
+        // Serial.printf("[FSM] PRELIFT to NO_LIFT; votes=%u forceN=%.2f\n", votes, sumN_ema);
+        // Serial.printf("[FSM] PRELIFT to NO LIFT");
         break;
       }
 
@@ -376,12 +402,12 @@ void loop() {
         state = State::LIFT;
         preliftStartMs = 0;
         ForceInternal::force_setLiftActive(true);
-        Serial.printf("[FSM] PRELIFT to LIFT; votes=%u forceN=%.2f\n", votes, sumN_ema);
-        //Serial.printf("[FSM] PRELIFT TO LIFT");
+        // Serial.printf("[FSM] PRELIFT to LIFT; votes=%u forceN=%.2f\n", votes, sumN_ema);
+        // Serial.printf("[FSM] PRELIFT TO LIFT");
         // Latency: twoVotes -> LIFT
         t_liftEnter_us = micros();
         if (lat_measuring && lat_gotTwoVotes && !lat_gotLift) {
-          log_line("lift_state", "twoVotes->LIFT_us", t_liftEnter_us - t_twoVotes_us);
+          //log_line("lift_state", "twoVotes->LIFT_us", t_liftEnter_us - t_twoVotes_us);
           lat_gotLift = true;
         }
       }
@@ -393,17 +419,17 @@ void loop() {
       const bool quietish    = (votesNow <= 1);
       const bool forceVeryLow = (sumN_ema < 1.5f);
       const bool emgInactive  = !v_emg;
-      //Serial.printf("[FSM] Made it here, beginning of LIFT\n");
-      Serial.printf("[FSM] LIFT entered, votes=%u [%s%s%s ] forceN=%.2f dmag=%.3f\n",
-              votesNow,
-              v_emg?"EMG ":"",
-              v_force?"FORCE ":"",
-              v_motion?"MOTION ":"",
-              sumN_ema, dmag);
+      // Serial.printf("[FSM] Made it here, beginning of LIFT\n");
+      // Serial.printf("[FSM] LIFT entered, votes=%u [%s%s%s ] forceN=%.2f dmag=%.3f\n",
+      //         votesNow,
+      //         v_emg?"EMG ":"",
+      //         v_force?"FORCE ":"",
+      //         v_motion?"MOTION ":"",
+      //         sumN_ema, dmag);
       if (forceVeryLow && emgInactive) {
         state = State::HOLD;
         votesOffStartMs = 0;
-        Serial.printf("[FSM] HOLD votes=%u [...]\n", votesNow);
+        // Serial.printf("[FSM] HOLD votes=%u [...]\n", votesNow);
         break;
       }
 
@@ -476,7 +502,7 @@ void loop() {
           //               v_force?"FORCE ":"",
           //               v_motion?"MOTION ":"",
           //               sumN_ema, dmag);
-          Serial.printf("[FSM] NO LIFT");
+          // Serial.printf("[FSM] NO LIFT");
         }
       } else {
         releaseStartMs = 0;
@@ -489,18 +515,18 @@ void loop() {
         releaseStartMs  = 0;
         ForceInternal::force_setLiftActive(true);
 
-        Serial.printf("[FSM] HOLD, LIFT votes=%u [%s%s%s ] forceN=%.2f dmag=%.3f\n",
-                      votesNow,
-                      v_emg?"EMG ":"",
-                      v_force?"FORCE ":"",
-                      v_motion?"MOTION ":"",
-                      sumN_ema, dmag);
-        Serial.printf("[FSM] HOLD to LIFT");
+        // Serial.printf("[FSM] HOLD, LIFT votes=%u [%s%s%s ] forceN=%.2f dmag=%.3f\n",
+        //               votesNow,
+        //               v_emg?"EMG ":"",
+        //               v_force?"FORCE ":"",
+        //               v_motion?"MOTION ":"",
+        //               sumN_ema, dmag);
+        // Serial.printf("[FSM] HOLD to LIFT");
 
         // Latency: twoVotes -> LIFT (HOLD->LIFT path)
         t_liftEnter_us = micros();
         if (lat_measuring && lat_gotTwoVotes && !lat_gotLift) {
-          log_line("lift_state", "twoVotes->LIFT_us", t_liftEnter_us - t_twoVotes_us);
+          //log_line("lift_state", "twoVotes->LIFT_us", t_liftEnter_us - t_twoVotes_us);
           lat_gotLift = true;
         }
       }
@@ -510,13 +536,19 @@ void loop() {
   // Serial Plotter output
   if (now - lastPlotMs >= PLOT_PERIOD_MS) {
     lastPlotMs = now;
-    Serial.print("state: ");
-    Serial.print(state_plot_value(state));
-    Serial.print("\tforceN: ");
-    Serial.print(sumN_ema);
-    Serial.print("\tvotes: ");
-    Serial.println(votes);
+
+    Serial.print(state_plot_value(state));  // 0,1,2,3
+    Serial.print('\t');
+    Serial.print((int)v_emg);               // column 2
+    Serial.print('\t');
+    Serial.print((int)v_force);             // column 3
+    Serial.print('\t');
+    Serial.print((int)v_motion);            // column 4
+    Serial.print('\t');
+    Serial.println(votes);                  // column 5
   }
+
+
 
   // TORQUE STUFF
   const bool assistEnabled = (state == State::LIFT || state == State::HOLD);
@@ -527,7 +559,7 @@ void loop() {
   if (lat_measuring && !prevAssistEnabled && assistEnabled) {
     t_assistEnable_us = micros();
     if (lat_gotTwoVotes && !lat_gotAssistEnable) {
-      log_line("assist_enable", "twoVotes->assistEnabled_us", t_assistEnable_us - t_twoVotes_us);
+      //log_line("assist_enable", "twoVotes->assistEnabled_us", t_assistEnable_us - t_twoVotes_us);
       lat_gotAssistEnable = true;
     }
   }
@@ -551,7 +583,7 @@ void loop() {
 
     const float I_set   = controller.torqueToCurrent(elbowTorque, r_spool, l_forearm, Kt);
     const uint16_t duty = controller.currentToPWM(I_set);
-    Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
+    // Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
     
     controller.sendMotorDuty(duty);
 
@@ -560,13 +592,13 @@ void loop() {
       t_pwmNonzero_us = micros();
 
       if (lat_gotTwoVotes) {
-        log_line("pwm_nonzero", "twoVotes->PWM_us", t_pwmNonzero_us - t_twoVotes_us);
+        //log_line("pwm_nonzero", "twoVotes->PWM_us", t_pwmNonzero_us - t_twoVotes_us);
       }
       if (lat_gotAssistEnable) {
-        log_line("pwm_nonzero", "assistEnabled->PWM_us", t_pwmNonzero_us - t_assistEnable_us);
+        //log_line("pwm_nonzero", "assistEnabled->PWM_us", t_pwmNonzero_us - t_assistEnable_us);
       }
-      if (t_emgRise_us)   log_line("pwm_nonzero", "emgRise->PWM_us",   t_pwmNonzero_us - t_emgRise_us);
-      if (t_forceRise_us) log_line("pwm_nonzero", "forceRise->PWM_us", t_pwmNonzero_us - t_forceRise_us);
+      //if (t_emgRise_us)   log_line("pwm_nonzero", "emgRise->PWM_us",   t_pwmNonzero_us - t_emgRise_us);
+      //if (t_forceRise_us) log_line("pwm_nonzero", "forceRise->PWM_us", t_pwmNonzero_us - t_forceRise_us);
 
       lat_gotPWMNonzero = true;
       lat_measuring = false; // end of cycle

@@ -40,7 +40,7 @@ namespace MotorInternal {
   void motor_setup() {
     Serial.begin(115200);
     delay(150);
-    Serial.println("[Motor] ready.");
+    // Serial.println("[Motor] ready.");
   }
 
   void motor_loop() {
