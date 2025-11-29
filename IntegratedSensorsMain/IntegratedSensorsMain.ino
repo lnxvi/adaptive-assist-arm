@@ -132,14 +132,15 @@ const float l_forearm = 0.25f;
 const float Kt        = 0.69f;
 
 // PID and controller params
-static const uint32_t LOOP_MS = 10;  // 10 ms, internal timing
-static const uint32_t LOOP_US = 10000;  // 10000 us = 10 ms, IntervalTimer objects need interval period in microseconds
+static const uint32_t LOOP_MS = 10;  // 100 ms, internal timing
+static const uint32_t LOOP_US = 10000;  // 100000 us = 100 ms, IntervalTimer objects need interval period in microseconds
 static const uint16_t RESOLUTION = 1024;  // Teensy ADC resolution
 static const float VREF = 3.3f;  // Teensy ADC reference voltage
 static const float CS_SCALE = 1.1;  // DRV8874 V/A scale
-static float Kp = 5.0f;  // adjust as necessary
-static float Ki = 1.0f;  // adjust as necessary 
+static float Kp = 3.0f;  // adjust as necessary
+static float Ki = 0.0f;  // adjust as necessary 
 bool controlEnabled = false;
+bool wind_dir = true;  // default windup, change to false to unwind
 IntervalTimer controlTimer;
 Controller controller(Kp, Ki);
 
@@ -186,6 +187,8 @@ static const float DEFAULT_ASSIST_FRACTION = 0.30f;
 static inline float getElbowAngleRadFallback() { return 1.5707963f; }
 
 // container function for motor loop
+void controlCheck() {controlEnabled = true;}
+
 void doControl() {
   if (controlEnabled) {
     // sample cs current
@@ -203,12 +206,14 @@ void doControl() {
     float i_cmd = controller.control(i_meas, LOOP_MS);
 
     // convert pwm
-    uint16_t duty = controller.currentToPWM(i_cmd);
+    uint16_t duty = controller.currentToPWM(i_cmd, wind_dir);
+    Serial.printf("sending %d duty\n", duty);
 
     // send
     controller.sendMotorDuty(duty);
   }
   // else do nothing, no loop action
+  else controller.sendMotorDuty(0);
 }
 
 void setup() {
@@ -232,7 +237,7 @@ void setup() {
   Timer3.pwm(IN1, 0);
   delay(100);
 
-  controlTimer.begin(doControl, LOOP_US);
+  controlTimer.begin(controlCheck, LOOP_US);
 
   // Sensors/modules
   myo.setup();
@@ -556,11 +561,16 @@ void loop() {
 
     // set interal I_setpoint of the controller 
     controller.setIsetpoint(controller.torqueToCurrent(elbowTorque, r_spool, l_forearm, Kt));
+    // Serial.printf("[FSM] updated Isp to %.2f\n", controller.getIsetpoint());
 
     // TODO true loop goes here, replaces everything below
     // enabled control loop
-    if (!controlEnabled) {
-      controlEnabled = true;
+    // if (!controlEnabled) {
+    //   controlEnabled = true;
+    // }
+    if (controlEnabled) {
+      doControl();
+      controlEnabled = false;
     }
 
     // const uint16_t duty = controller.currentToPWM(I_set);
@@ -585,6 +595,7 @@ void loop() {
     }
 
   } else {
+    // Serial.println("control disabled");
     // disable contol loop
     if (controlEnabled) {
       controlEnabled = false;
