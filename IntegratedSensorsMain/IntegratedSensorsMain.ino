@@ -144,6 +144,10 @@ static const uint32_t HOLD_GRACE_MS   = 250;
 static const float    HOLD_ASSIST_MAX = 0.15f;
 static uint32_t holdStartMs = 0;
 
+// timer and latch for holding torque value
+static bool torqueLatch = false;
+static float latchedTorqueNm = 0.0f;
+
 // Motor Pins
 #define nSLEEP 31
 #define PMODE  30
@@ -578,13 +582,27 @@ void loop() {
     MotorInternal::motor_setAssistFraction(assistFrac);
     motor.runTestStep();
 
-    const float elbowTorque = MotorInternal::motor_getElbowTorqueNm();
+    const float elbowTorqueRaw = MotorInternal::motor_getElbowTorqueNm();
     //Serial.printf("[FSM] Made it here, sending torque value of %0.3f Nm.\n", elbowTorque);
 
-    const float I_set   = controller.torqueToCurrent(elbowTorque, r_spool, l_forearm, Kt);
-    const uint16_t duty = controller.currentToPWM(I_set);
     // Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
     
+    float elbowTorqueCmd;
+
+    if (state == State::LIFT){
+      torqueLatched = false;
+      elbowTorqueCmd = elbowTorqueRaw;
+    } else {
+      if(!torqueLatched){
+        latchedTorqueNm = elbowTorqueRaw;
+        torqueLatched = true;
+      }
+
+      elbowTorqueCmd = latchedTorqueNm;
+    }
+
+    const float I_set   = controller.torqueToCurrent(elbowTorqueCmd, r_spool, l_forearm, Kt);
+    const uint16_t duty = controller.currentToPWM(I_set);
     controller.sendMotorDuty(duty);
 
     // Logging
@@ -609,6 +627,9 @@ void loop() {
     const float weightLb      = ForceInternal::force_getWeightLb();
     const float elbowAngleRad = getElbowAngleRadFallback();
     const float assistFrac    = DEFAULT_ASSIST_FRACTION;
+
+    torqueLatched = false;
+    latchedTorqueNm = 0.0f;
 
     MotorInternal::motor_setWeightKg(weightKg);
     MotorInternal::motor_setElbowAngleRad(elbowAngleRad);
