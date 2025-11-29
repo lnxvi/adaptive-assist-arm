@@ -22,7 +22,9 @@
 #define IN1 9
 #endif
 
-// #define CS A14  // pin 38
+#ifndef CS
+#define CS A14  // pin 38
+#endif
 
 Controller::Controller(float Kp_init, float Ki_init, float Kd_init) 
   : Kp(Kp_init), Ki(Ki_init), Kd(Kd_init), I_setpoint(0.0f), 
@@ -57,22 +59,39 @@ float Controller::control(float i_meas, uint16_t dt) {
 }
 
 // current PWM conversion
-uint16_t Controller::currentToPWM(float i) {
-  uint16_t duty = (i/MAX_CURRENT)*float(MAX_PWM) + MIN_PWM;
+uint16_t Controller::currentToPWM(float i, bool winding) {
+
+  uint16_t duty;
+  if (winding) duty = (i-b_wind)/m_wind;  // winding
+  else duty = (i-b_unwind)/m_unwind;  // unwinding
+
+  // duty = constrain(duty, MIN_PWM, MAX_PWM);  // should never go below 200 or above 1023
+  
+  // ramp increase decrease control
+  if (prev_duty == 0) prev_duty = MIN_PWM;
+  // if new duty is more than 25% increase from previous, cap at 25% increase
+  if (duty > prev_duty+25) duty = prev_duty+25;  
+
+  // if new duty is less than 25% decrease from previous, cap at 25% decrease
+  else if (duty < prev_duty-25) duty = prev_duty-25;
+
+  duty = constrain(duty, MIN_PWM, MAX_PWM);
+
+  prev_duty = duty;
   return duty;
 }
 
-void Controller::sendMotorDuty(uint16_t duty) {
-  // todo clamp pwms
-
-  Timer3.pwm(IN1, duty);  // send duty to timer
+void Controller::sendMotorDuty(uint16_t duty, bool winding) {
+  if (winding) Timer3.pwm(IN2, duty);
+  else         Timer3.pwm(IN1, duty);  // send duty to timer
 }
 
 void Controller::reset() {
-  error = 0.0;
-  integral = 0.0;
-  prev_error = 0.0;
-  I_cmd = 0.0;
+  error = 0.0f;
+  integral = 0.0f;
+  prev_error = 0.0f;
+  I_cmd = 0.0f;
+  prev_duty = 0;
 }
 
 void Controller::setKp(float new_Kp) {Kp = new_Kp;}
