@@ -223,14 +223,14 @@ namespace ForceInternal {
     float W_lb = W_kg * 2.20462262f;
 
     // Print line
-    // Serial.print("finger_forces: ");
+    //Serial.print("finger_forces: ");
     // Serial.print(F_I,2); Serial.print(",");
     // Serial.print(F_M,2); Serial.print(",");
     // Serial.print(F_R,2); Serial.print(",");
     // Serial.print(F_P,2);
     // Serial.print(" | ");
     // Serial.print(W_kg,2); Serial.print(",");
-    // Serial.println(W_lb,2);
+    //Serial.println(W_lb,2);
 
     lastUpdateMs = millis();
     last_sumN = sumN;

@@ -200,7 +200,7 @@ static inline float getElbowAngleRadFallback() { return 1.5707963f; }
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("state\tforceN\tvotes");   // header for Serial Plotter
+  //Serial.println("state\tforceN\tvotes");   // header for Serial Plotter
 
 #if defined(ARDUINO_TEENSY41)
   const uint32_t t0 = millis();
@@ -534,19 +534,19 @@ void loop() {
   }
 
   // Serial Plotter output
-  if (now - lastPlotMs >= PLOT_PERIOD_MS) {
-    lastPlotMs = now;
+  // if (now - lastPlotMs >= PLOT_PERIOD_MS) {
+  //   lastPlotMs = now;
 
-    Serial.print(state_plot_value(state));  // 0,1,2,3
-    Serial.print('\t');
-    Serial.print((int)v_emg);               // column 2
-    Serial.print('\t');
-    Serial.print((int)v_force);             // column 3
-    Serial.print('\t');
-    Serial.print((int)v_motion);            // column 4
-    Serial.print('\t');
-    Serial.println(votes);                  // column 5
-  }
+  //   Serial.print(state_plot_value(state));  // 0,1,2,3
+  //   Serial.print('\t');
+  //   Serial.print((int)v_emg);               // column 2
+  //   Serial.print('\t');
+  //   Serial.print((int)v_force);             // column 3
+  //   Serial.print('\t');
+  //   Serial.print((int)v_motion);            // column 4
+  //   Serial.print('\t');
+  //   Serial.println(votes);                  // column 5
+  // }
 
 
 
