@@ -3,12 +3,14 @@ enum class State : uint8_t;
 
 #include <Arduino.h>
 #include <TimerThree.h>
+#include <IntervalTimer.h>
 #include <SPI.h>
 #include <SD.h>
 #include "Accelerometer/Accelerometer.h"
 #include "Myoware/Myoware.h"
 #include "ForceSensors/ForceSensors.h"
 #include "MotorAssist/MotorAssist.h"
+#include "Control/controller.h"
 #include "Accelerometer/Accelerometer.cpp"
 #include "Accelerometer/AccelerometerInternal.cpp"
 #include "Myoware/Myoware.cpp"
@@ -18,7 +20,6 @@ enum class State : uint8_t;
 #include "MotorAssist/MotorAssist.cpp"
 #include "MotorAssist/MotorAssistInternal.cpp"
 #include "Control/controller.cpp"
-#include "Control/controller.h"
 
 namespace ForceInternal {
   void  force_setLiftActive(bool active);
@@ -44,7 +45,6 @@ Accel::Module         accel;
 Myo::Module           myo;
 Force::Module         force;
 MotorTorque::Module   motor;
-Controller            controller;
 
 #ifndef BUILTIN_SDCARD
 #define BUILTIN_SDCARD 254
@@ -145,8 +145,23 @@ static const float    HOLD_ASSIST_MAX = 0.15f;
 static uint32_t holdStartMs = 0;
 
 // timer and latch for holding torque value
-static bool torqueLatch = false;
+static bool torqueLatched = false;
 static float latchedTorqueNm = 0.0f;
+
+
+// PID and controller params
+static const uint32_t LOOP_MS = 10;  // 100 ms, internal timing
+static const uint32_t LOOP_US = 10000;  // 100000 us = 100 ms, IntervalTimer objects need interval period in microseconds
+static const uint16_t RESOLUTION = 1024;  // Teensy ADC resolution
+static const float VREF = 3.3f;  // Teensy ADC reference voltage
+static const float CS_SCALE = 1.1;  // DRV8874 V/A scale
+static float Kp = 3.0f;  // adjust as necessary
+static float Ki = 0.0f;  // adjust as necessary 
+bool controlEnabled = false;
+bool wind_dir = true;  // default windup, change to false to unwind
+
+IntervalTimer controlTimer;
+Controller controller(Kp, Ki);
 
 // Motor Pins
 #define nSLEEP 31
@@ -202,6 +217,36 @@ static const float DEFAULT_ASSIST_FRACTION = 0.30f;
 
 static inline float getElbowAngleRadFallback() { return 1.5707963f; }
 
+// container function for motor loop
+void controlCheck() {controlEnabled = true;}
+
+void doControl() {
+  if (controlEnabled) {
+    // sample cs current
+    float sum = 0;
+    int samples = 30;
+    for (int i=0;i<samples;i++) {
+      float V_cs = (analogRead(CS)/(float)RESOLUTION)*VREF;
+      float I = V_cs / CS_SCALE;
+      sum += I;
+      // delay(delayMs);
+    }
+    float i_meas = sum / samples;
+
+    // get error and cmd current
+    float i_cmd = controller.control(i_meas, LOOP_MS);
+
+    // convert pwm
+    uint16_t duty = controller.currentToPWM(i_cmd, wind_dir);
+    // Serial.printf("sending %d duty\n", duty);
+
+    // send
+    controller.sendMotorDuty(duty);
+  }
+  // else do nothing, no loop action
+  else controller.sendMotorDuty(0);
+}
+
 void setup() {
   Serial.begin(115200);
   //Serial.println("state\tforceN\tvotes");   // header for Serial Plotter
@@ -224,6 +269,8 @@ void setup() {
   Timer3.initialize(40);
   Timer3.pwm(IN1, 0);
   delay(100);
+
+  controlTimer.begin(controlCheck, LOOP_US);
 
   // Sensors/modules
   myo.setup();
@@ -601,9 +648,17 @@ void loop() {
       elbowTorqueCmd = latchedTorqueNm;
     }
 
+    // update setpoint curren
+    // add check for sudden drops ?? 
+    // if in lift state, sudden drops should not occur, as that would indicate change of state
     const float I_set   = controller.torqueToCurrent(elbowTorqueCmd, r_spool, l_forearm, Kt);
-    const uint16_t duty = controller.currentToPWM(I_set);
-    controller.sendMotorDuty(duty);
+
+    if (controlEnabled) {
+      doControl();
+      controlEnabled = false;
+    }
+    // const uint16_t duty = controller.currentToPWM(I_set);
+    // controller.sendMotorDuty(duty);
 
     // Logging
     if (lat_measuring && !lat_gotPWMNonzero) {
