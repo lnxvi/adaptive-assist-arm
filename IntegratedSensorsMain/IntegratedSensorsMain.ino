@@ -161,6 +161,10 @@ static float Ki = 0.0f;  // adjust as necessary
 bool controlEnabled = false;
 bool wind_dir = true;  // default windup, change to false to unwind
 
+// Assitance values
+float g_emg_before = 0;
+float g_emg_after = 0;
+
 IntervalTimer controlTimer;
 Controller controller(Kp, Ki);
 
@@ -251,6 +255,9 @@ void doControl() {
 void setup() {
   Serial.begin(115200);
   //Serial.println("state\tforceN\tvotes");   // header for Serial Plotter
+  Serial.print(g_emg_before);
+  Serial.print(" ");
+  Serial.println(g_emg_after);
 
 #if defined(ARDUINO_TEENSY41)
   const uint32_t t0 = millis();
@@ -628,7 +635,10 @@ void loop() {
   prevAssistEnabled = assistEnabled;
 
   if (assistEnabled) {
-    //Serial.printf("[FSM] Made it here, beginning of assistance\n");
+    // Pull myoware values before assistance
+    g_emg_before = MyoInternal::smooth;
+  
+    //Serial.printf("[FSM] Made it to LIFT, beginning assistance\n");
 
     const float weightKg      = ForceInternal::force_getWeightKg();
     const float weightLb      = ForceInternal::force_getWeightLb();
@@ -641,7 +651,7 @@ void loop() {
     motor.runTestStep();
 
     const float elbowTorqueRaw = MotorInternal::motor_getElbowTorqueNm();
-    //Serial.printf("[FSM] Made it here, sending torque value of %0.3f Nm.\n", elbowTorque);
+    //Serial.printf("[FSM] Sending elbow torque value of %0.3f Nm.\n", elbowTorqueRaw);
     
     float elbowTorqueCmd;
 
@@ -664,6 +674,8 @@ void loop() {
 
     // update setpoint current
     const float I_set   = controller.torqueToCurrent(elbowTorqueCmd, r_spool, l_forearm, Kt);
+    //Serial.printf("[FSM] Sending %f A (elbowTorque at %d) to motor\n", I_set, elbowTorqueCmd);
+
     controller.setIsetpoint(I_set);
     // add check for sudden drops ?? 
     // if in lift state, sudden drops should not occur, as that would indicate change of state
@@ -676,13 +688,15 @@ void loop() {
       doControl();
       controlEnabled = false;
     }
+
+    g_emg_after = MyoInternal::smooth;
     
-    controller.sendMotorDuty(duty);
+    //controller.sendMotorDuty(duty);
 
 
-    Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
+    //Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
 
-    controller.sendMotorDuty(duty);
+    //controller.sendMotorDuty(duty);
 
 
     // Logging -- can prob comment out
@@ -716,6 +730,8 @@ void loop() {
     MotorInternal::motor_setAssistFraction(assistFrac);
 
     motor.runTestStep();
+
+    // TODO: make motor unwind for a few seconds after LIFT
     controller.sendMotorDuty(0);
   }
 }
