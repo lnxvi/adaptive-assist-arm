@@ -147,6 +147,8 @@ static uint32_t holdStartMs = 0;
 // timer and latch for holding torque value
 static bool torqueLatch = false;
 static float latchedTorqueNm = 0.0f;
+static const uint32_t LIFT_TRACK_MS = 200;
+static uint32_t liftTorqueStartMs = 0;
 
 // Motor Pins
 #define nSLEEP 31
@@ -222,7 +224,8 @@ void setup() {
   digitalWrite(nSLEEP, HIGH);
 
   Timer3.initialize(40);
-  Timer3.pwm(IN1, 0);
+  // Timer3.pwm(IN1, 0);
+  Timer3.pwm(IN2, 0);
   delay(100);
 
   // Sensors/modules
@@ -409,6 +412,11 @@ void loop() {
         // Serial.printf("[FSM] PRELIFT to LIFT; votes=%u forceN=%.2f\n", votes, sumN_ema);
         // Serial.printf("[FSM] PRELIFT TO LIFT");
         // Latency: twoVotes -> LIFT
+
+        liftTorqueStartMs = now;
+        torqueLatch = false;
+        latchedTorqueNm = 0.0f;
+
         t_liftEnter_us = micros();
         if (lat_measuring && lat_gotTwoVotes && !lat_gotLift) {
           //log_line("lift_state", "twoVotes->LIFT_us", t_liftEnter_us - t_twoVotes_us);
@@ -527,6 +535,10 @@ void loop() {
         //               sumN_ema, dmag);
         // Serial.printf("[FSM] HOLD to LIFT");
 
+        liftTorqueStartMs = now;
+        torqueLatch = false;
+        latchedTorqueNm = 0.0f;
+
         // Latency: twoVotes -> LIFT (HOLD->LIFT path)
         t_liftEnter_us = micros();
         if (lat_measuring && lat_gotTwoVotes && !lat_gotLift) {
@@ -584,28 +596,35 @@ void loop() {
 
     const float elbowTorqueRaw = MotorInternal::motor_getElbowTorqueNm();
     //Serial.printf("[FSM] Made it here, sending torque value of %0.3f Nm.\n", elbowTorque);
-
-    // Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
     
     float elbowTorqueCmd;
 
-    if (state == State::LIFT){
-      torqueLatched = false;
-      elbowTorqueCmd = elbowTorqueRaw;
-    } else {
-      if(!torqueLatched){
-        latchedTorqueNm = elbowTorqueRaw;
-        torqueLatched = true;
-      }
+    if (state == State::LIFT) {
+      if (!torqueLatch) {
+        elbowTorqueCmd   = elbowTorqueRaw;
+        latchedTorqueNm  = elbowTorqueRaw;
 
+        if ((now - liftTorqueStartMs) >= LIFT_TRACK_MS) {
+          torqueLatch = true;
+        }
+      } else {
+        // hold the torque
+        elbowTorqueCmd = latchedTorqueNm;
+      }
+    } else {
+      // always use hold torque
       elbowTorqueCmd = latchedTorqueNm;
     }
 
     const float I_set   = controller.torqueToCurrent(elbowTorqueCmd, r_spool, l_forearm, Kt);
     const uint16_t duty = controller.currentToPWM(I_set);
+
+    Serial.printf("[FSM] Sending %f A (duty at %d/1023) to motor\n", I_set, duty);
+
     controller.sendMotorDuty(duty);
 
-    // Logging
+
+    // Logging -- can prob comment out
     if (lat_measuring && !lat_gotPWMNonzero) {
       t_pwmNonzero_us = micros();
 
@@ -628,7 +647,7 @@ void loop() {
     const float elbowAngleRad = getElbowAngleRadFallback();
     const float assistFrac    = DEFAULT_ASSIST_FRACTION;
 
-    torqueLatched = false;
+    torqueLatch = false;
     latchedTorqueNm = 0.0f;
 
     MotorInternal::motor_setWeightKg(weightKg);

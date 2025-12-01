@@ -65,7 +65,8 @@ uint16_t Controller::currentToPWM(float i) {
 void Controller::sendMotorDuty(uint16_t duty) {
   // todo clamp pwms
 
-  Timer3.pwm(IN1, duty);  // send duty to timer
+  // Timer3.pwm(IN1, duty);  // send duty to timer
+  Timer3.pwm(IN2, duty);
 }
 
 void Controller::reset() {

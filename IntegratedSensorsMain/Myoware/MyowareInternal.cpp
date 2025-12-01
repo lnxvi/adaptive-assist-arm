@@ -117,7 +117,7 @@ float percentile95(float* arr, int n) {
 }
 
 void printDivider() {
-  // Serial.println(F("\n---------------------------------------------"));
+  Serial.println(F("\n---------------------------------------------"));
 }
 
 void instruct(const __FlashStringHelper* s) {
@@ -146,20 +146,19 @@ void setThresholds() {
 
   thr_lift_emg = base;
 
-  // Serial.println(F("\n=== Calibration Results ==="));
-  // Serial.print(F("Rest mean: ")); Serial.println(mu_rest, 1);
-  // Serial.print(F("Rest std : ")); Serial.println(std_rest, 1);
-  // Serial.print(F("P95_air  : ")); Serial.println(P95_air, 1);
-  // Serial.print(F("MVC95    : ")); Serial.println(MVC95, 1);
-  // Serial.print(F("thr_on   : ")); Serial.println(thr_on, 1);
-  // Serial.print(F("thr_dn   : ")); Serial.println(thr_dn, 1);
-  // Serial.print(F("thr_lift : ")); Serial.println(thr_lift_emg, 1);
-  // Serial.println(F("===========================\n"));
+  Serial.println(F("\n=== Calibration Results ==="));
+  Serial.print(F("Rest mean: ")); Serial.println(mu_rest, 1);
+  Serial.print(F("Rest std : ")); Serial.println(std_rest, 1);
+  Serial.print(F("P95_air  : ")); Serial.println(P95_air, 1);
+  Serial.print(F("MVC95    : ")); Serial.println(MVC95, 1);
+  Serial.print(F("thr_on   : ")); Serial.println(thr_on, 1);
+  Serial.print(F("thr_dn   : ")); Serial.println(thr_dn, 1);
+  Serial.print(F("thr_lift : ")); Serial.println(thr_lift_emg, 1);
+  Serial.println(F("===========================\n"));
 
   // Serial.println(F("smooth\tthr_on\tthr_lift_emg\tactive\temg_lift")); // Plotter header (Serial Plotter)
 }
 
-// ---------- phase transitions ----------
 void startRestPhase() {
   phase = CAL_REST;
   phaseStartMs = millis();
@@ -181,7 +180,7 @@ void startAirRun() {
   phase = CAL_AIRCURL_RUN;
   phaseStartMs = millis();
   airN = 0;
-  // Serial.println(F("Go! Slow curls now..."));
+  Serial.println(F("Go! Slow curls now..."));
 }
 
 void startMVC() {
@@ -244,12 +243,12 @@ void myo_loop() {
       if (now - phaseStartMs >= 4000) {   // 4 s
         mu_rest  = (float)restMean;
         std_rest = computeStd();
-        // Serial.print(F("Rest mean=")); Serial.print(mu_rest,1);
-        // Serial.print(F(", std="));     Serial.println(std_rest,1);
+        Serial.print(F("Rest mean=")); Serial.print(mu_rest,1);
+        Serial.print(F(", std="));     Serial.println(std_rest,1);
         startAirReady();
       } else if (((now - phaseStartMs) % 1000) < SAMPLE_PERIOD_MS) {
         int left = 4 - (int)((now - phaseStartMs)/1000);
-        // Serial.print(F("...rest ")); Serial.print(left); Serial.println(F(" s"));
+        Serial.print(F("...rest ")); Serial.print(left); Serial.println(F(" s"));
       }
     } break;
 
@@ -258,7 +257,7 @@ void myo_loop() {
         startAirRun();
       } else if (((now - phaseStartMs) % 1000) < SAMPLE_PERIOD_MS) {
         int left = 3 - (int)((now - phaseStartMs)/1000);
-        // Serial.print(F("Starting in ")); Serial.print(left); Serial.println(F(" s"));
+        Serial.print(F("Starting in ")); Serial.print(left); Serial.println(F(" s"));
       }
     } break;
 
@@ -266,12 +265,12 @@ void myo_loop() {
       if (airN < AIRCURL_MAX_SAMPLES) airBuf[airN++] = smooth;
       if (now - phaseStartMs >= AIRCURL_MS) {
         P95_air = percentile95(airBuf, airN);
-        // Serial.print(F("Air-curl P95=")); Serial.println(P95_air,1);
+        Serial.print(F("Air-curl P95=")); Serial.println(P95_air,1);
         // Immediately start MVC 
         startMVC();
       } else if (((now - phaseStartMs) % 1000) < SAMPLE_PERIOD_MS) {
         int left = (int)((AIRCURL_MS - (now - phaseStartMs) + 999)/1000);
-        // Serial.print(F("...air-curl ")); Serial.print(left); Serial.println(F(" s"));
+        Serial.print(F("...air-curl ")); Serial.print(left); Serial.println(F(" s"));
       }
     } break;
 
@@ -279,11 +278,11 @@ void myo_loop() {
       if (mvcN < MVC_MAX_SAMPLES) mvcBuf[mvcN++] = smooth;
       if (now - phaseStartMs >= MVC_MS) {
         MVC95 = percentile95(mvcBuf, mvcN);
-        // Serial.print(F("MVC95=")); Serial.println(MVC95,1);
+        Serial.print(F("MVC95=")); Serial.println(MVC95,1);
         finishCalibration();
       } else if (((now - phaseStartMs) % 1000) < SAMPLE_PERIOD_MS) {
         int left = (int)((MVC_MS - (now - phaseStartMs) + 999)/1000);
-        // Serial.print(F("...MVC ")); Serial.print(left); Serial.println(F(" s"));
+        Serial.print(F("...MVC ")); Serial.print(left); Serial.println(F(" s"));
       }
     } break;
 
