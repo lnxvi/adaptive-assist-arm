@@ -193,6 +193,9 @@ static inline int state_plot_value(State s) {
   return -1;
 }
 
+static bool hasEnteredHold = false;
+static bool unwinding = false;
+
 // timers
 static uint32_t votesOnStartMs  = 0; // entering LIFT
 static uint32_t votesOffStartMs = 0; // LIFT to HOLD
@@ -200,6 +203,7 @@ static uint32_t releaseStartMs  = 0; // HOLD to NO_LIFT
 static uint32_t preliftStartMs  = 0; // timing PRELIFT dwell
 static uint32_t lastPlotMs      = 0; // Serial Plotter cadence
 static const uint32_t PLOT_PERIOD_MS = 50;
+static uint32_t unwindStartMs    = 0;
 
 // voters
 static bool v_force  = false;
@@ -520,6 +524,8 @@ void loop() {
       const uint8_t votesNow = votes;
       holdStartMs = now;
 
+      hasEnteredHold = true;
+
       // HOLD to LIFT
       const bool canEnterLift =
           (v_force && (v_emg || v_motion)) ||
@@ -732,6 +738,19 @@ void loop() {
     motor.runTestStep();
 
     // TODO: make motor unwind for a few seconds after LIFT
-    controller.sendMotorDuty(0);
+    if (hasEnteredHold) {
+      if (!unwinding) {
+        unwinding = true;
+        unwindStartMs = millis();
+        controller.sendMotorDuty(250, false);  // unwind at 250 duty
+      }
+      else {
+        if (millis() - unwindStartMs >= 3000) {
+          controller.sendMotorDuty(0);  // turn motor off when 3000 ms elapse
+          unwinding - false;
+          hasEnteredHold = false;
+        }
+      }
+    }
   }
 }
