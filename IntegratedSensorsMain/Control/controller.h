@@ -16,6 +16,13 @@ class Controller {
         float prev_error;
         float integral;
 
+        uint16_t prev_duty = 0;
+
+        const float m_wind = 0.0062f;
+        const float b_wind = 0.2483f;
+        const float m_unwind = 0.0064f;
+        const float b_unwind = 0.2094f;
+
         float const MAX_CURRENT = 3.0f;
         uint16_t MAX_PWM = 1023;
         uint16_t MIN_PWM = 500;
@@ -25,8 +32,9 @@ class Controller {
 
         float torqueToCurrent(float torque, float r_spool, float l_forearm, float Kt);  // torque-current conversion
         float control(float i_meas, uint16_t dt);
-        uint16_t currentToPWM(float I);  // current PWM conversion
-        void sendMotorDuty(uint16_t duty);
+        uint16_t currentToPWM(float i, bool winding=true);  // current PWM conversion
+        void sendMotorDuty(uint16_t duty, bool winding=true); 
+
         void reset();
 
         // mutators, accessors
