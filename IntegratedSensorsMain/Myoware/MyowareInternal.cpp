@@ -121,7 +121,7 @@ void printDivider() {
 }
 
 void instruct(const __FlashStringHelper* s) {
-  printDivider(); Serial.println(s); printDivider();
+  printDivider(); /* Serial.println(s); */ printDivider();
 }
 
 void setThresholds() {
@@ -156,10 +156,9 @@ void setThresholds() {
   Serial.print(F("thr_lift : ")); Serial.println(thr_lift_emg, 1);
   Serial.println(F("===========================\n"));
 
-  Serial.println(F("smooth\tthr_on\tthr_lift_emg\tactive\temg_lift")); // Plotter header
+  // Serial.println(F("smooth\tthr_on\tthr_lift_emg\tactive\temg_lift")); // Plotter header (Serial Plotter)
 }
 
-// ---------- phase transitions ----------
 void startRestPhase() {
   phase = CAL_REST;
   phaseStartMs = millis();

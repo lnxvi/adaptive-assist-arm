@@ -79,7 +79,7 @@ namespace AccelInternal {
     writeReg(0x6B, 0x00); // PWR_MGMT_1: wake up
     writeReg(0x1C, 0x00); // ACCEL_CONFIG: ±2g
 
-    Serial.println("ms,ax_g,ay_g,az_g,a_lin_raw,a_lin_smooth,state,intent");
+    // Serial.println("ms,ax_g,ay_g,az_g,a_lin_raw,a_lin_smooth,state,intent");
   }
 
   void accel_loop() {
@@ -168,5 +168,9 @@ namespace AccelInternal {
   // Getters
   float accel_getAmag() {
     return amag;
+  }
+
+  bool accel_getIntent() {
+    return intent;
   }
 }
